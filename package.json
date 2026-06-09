@@ -1,0 +1,13 @@
+{
+  "name": "worldcup-predict-proxy",
+  "version": "1.0.0",
+  "description": "API-Football 缓存代理：让官方调用次数与用户数量解耦",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

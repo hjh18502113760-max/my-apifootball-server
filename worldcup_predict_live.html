@@ -680,8 +680,8 @@ document.getElementById('tdBack').onclick=()=>show('teams');
 /* ===================== 实时数据 + 预测模型 ===================== */
 /* —— 配置：在 api-football.com 注册拿到 key，填入 API_KEY，再把 USE_LIVE 改为 true —— */
 const CONFIG = {
-  USE_LIVE: false,                  // 启用真实数据：改成 true
-  SERVER_BASE: '',                  // ★分发推荐：填你的代理地址(如 https://xxx.onrender.com)；填了就走代理，客户端不需要 key
+  USE_LIVE: true,                  // 启用真实数据：改成 true
+  SERVER_BASE: 'https://my-apifootball-server.onrender.com',                  // ★分发推荐：填你的代理地址(如 https://xxx.onrender.com)；填了就走代理，客户端不需要 key
   API_KEY:  '',                     // 仅"直连官方"(单人测试)时需要；走代理时留空
   API_BASE: 'https://v3.football.api-sports.io',
   POLL_MS:  30000,                  // 实时刷新间隔（毫秒）

@@ -48,6 +48,7 @@ function ttlFor(path) {
   if (path.includes('/fixtures/statistics'))return 20e3;        // 技术统计：20 秒
   if (path.includes('live=all'))            return 15e3;        // 进行中列表：15 秒
   if (path.includes('next='))               return 30 * 60e3;   // 赛程：30 分钟
+  if (/fixtures\?league=/.test(path))       return 30 * 60e3;   // 全量赛程：30 分钟
   if (/fixtures\?id=/.test(path))           return 15e3;        // 单场实时：15 秒
   return 15e3;
 }

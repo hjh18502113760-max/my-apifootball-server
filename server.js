@@ -22,7 +22,7 @@ const { URL } = require('url');
 const API_KEY   = process.env.API_KEY || '';
 const UPSTREAM   = process.env.UPSTREAM || 'https://v3.football.api-sports.io';
 const PORT       = parseInt(process.env.PORT || '8787', 10);
-const DAILY_CAP  = parseInt(process.env.DAILY_CAP || '100', 10);
+const DAILY_CAP  = parseInt(process.env.DAILY_CAP || '70000', 10);  // 付费档默认上限（可用环境变量覆盖）
 const LEAGUE_ID  = process.env.LEAGUE_ID || '1';
 const SEASON     = process.env.SEASON || '2026';
 const WARM       = (process.env.WARM || 'off') === 'on';
@@ -41,10 +41,13 @@ for (const f of ['index.html', 'worldcup_predict_live.html', 'app.html']) {
 const cache = new Map();               // path -> { data:<string>, exp:<ms> }
 function ttlFor(path) {
   if (path.includes('/teams/statistics'))   return 12 * 3600e3; // 队伍数据：半天
+  if (path.includes('/fixtures/events'))    return 24 * 3600e3; // 已结束比赛进球事件：1 天
+  if (/teams\?league=/.test(path))          return 24 * 3600e3; // 参赛球队列表：1 天
   if (path.includes('/players'))            return 12 * 3600e3; // 球员资料：半天
   if (path.includes('/injuries'))           return 3600e3;      // 伤停：1 小时
   if (path.includes('/fixtures/lineups'))   return 5 * 60e3;    // 首发：5 分钟
   if (/fixtures\?team=.*last=/.test(path))  return 6 * 3600e3;  // 某队近 N 场：6 小时
+  if (/fixtures\?team=/.test(path))         return 30 * 60e3;   // 某队全部赛事：30 分钟
   if (path.includes('/fixtures/statistics'))return 20e3;        // 技术统计：20 秒
   if (path.includes('live=all'))            return 15e3;        // 进行中列表：15 秒
   if (path.includes('next='))               return 30 * 60e3;   // 赛程：30 分钟
@@ -113,6 +116,31 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (u.pathname === '/healthz') { res.writeHead(200, CORS); return res.end('ok'); }
+
+  // PWA manifest（让"添加到主屏幕"用上图标/名称/独立全屏）
+  if (u.pathname === '/manifest.webmanifest' || u.pathname === '/manifest.json') {
+    res.writeHead(200, { 'Content-Type': 'application/manifest+json; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
+    return res.end(JSON.stringify({
+      name: '世界杯胜率预测', short_name: '胜率预测', start_url: '/', scope: '/',
+      display: 'standalone', orientation: 'portrait',
+      background_color: '#070a11', theme_color: '#0b111c',
+      icons: [
+        { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+        { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' }
+      ]
+    }));
+  }
+
+  // 静态图标：同目录下的 .png 直接提供
+  if (req.method === 'GET' && /^\/[\w.\-]+\.png$/.test(u.pathname)) {
+    try {
+      const fp = __dirname + u.pathname;
+      if (fs.existsSync(fp)) {
+        res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400', 'Access-Control-Allow-Origin': '*' });
+        return res.end(fs.readFileSync(fp));
+      }
+    } catch (e) {}
+  }
 
   if (u.pathname === '/admin/status') {        // 监控官方用量
     rollover();

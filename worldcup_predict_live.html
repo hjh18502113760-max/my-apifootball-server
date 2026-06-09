@@ -728,11 +728,18 @@ function showTeam(i){
        ['场均控球',Math.round(sum('poss')/n)+'%'],['胜率',Math.round(w/n*100)+'%'],['夺冠概率',t.ch+'%']];
   document.getElementById('tdAgg').innerHTML=agg.map(a=>`<div class="agg"><div class="v">${a[1]}</div><div class="k">${a[0]}</div></div>`).join('');
   const squadTitle=document.querySelector('#v-teamdetail .section-t:nth-of-type(2)');
+  if(squadTitle) squadTitle.textContent = t.live ? '本届累计黄牌 / 停赛风险' : '主力球员 · 近期状态';
   const sq=squads[i]||[];
   const warn=document.getElementById('tdSquadWarn');
   if(t.live){
-    warn.className='squad-warn ok'; warn.textContent='实时模式 · 主力名单与状态见「赛前对阵」';
-    document.getElementById('tdSquad').innerHTML='';
+    const cards=t.cards||{};
+    const entries=Object.entries(cards).filter(e=>e[1]>0).sort((a,b)=>b[1]-a[1]);
+    warn.className='squad-warn '+(entries.some(e=>e[1]>=2)?'warn':'ok');
+    warn.textContent = entries.length ? '本届累计黄牌 · 满 2 张停下一场（1/4 决赛后清零）；具体停赛/缺阵见各场「赛前对阵」' : '本届暂无黄牌记录（开赛后累计）';
+    document.getElementById('tdSquad').innerHTML = entries.map(e=>{
+      const c=e[1], risk = c>=2?'<span class="risk ban">已达停赛线</span>':(c===1?'<span class="risk warn">再 1 张停赛</span>':'');
+      return `<div class="cardrow"><span class="yc"></span><span class="nm">${e[0]}</span><b style="font-family:var(--num)">${c}</b>${risk}</div>`;
+    }).join('');
   } else {
     const stMap={fit:['健康','st-fit'],doubt:['出场存疑','st-doubt'],inj:['伤缺','st-inj'],sus:['停赛','st-sus']};
     const posMap={GK:['门将','p-gk'],DF:['后卫','p-df'],MF:['中场','p-mf'],FW:['前锋','p-fw']};
@@ -752,29 +759,41 @@ function showTeam(i){
   }
   document.getElementById('tdLog').innerHTML = mlog.length ? mlog.map(m=>{
     if(!t.live) genGoals(m);
+    const cs=[m.poss!=null?`控 ${Math.round(m.poss)}%`:null, m.sh!=null?`射 ${m.sh}`:null, m.sot!=null?`正 ${m.sot}`:null, m.cor!=null?`角 ${m.cor}`:null].filter(Boolean).join(' · ');
+    const xgp=m.xg!=null?`<b>xG ${(+m.xg).toFixed(1)}</b>`:'';
     return `<div class="mblock"><div class="mrow">
       <div class="res ${m.res}">${(m.res||'').toUpperCase()}</div>
-      <div class="opp"><div class="o1"><span class="fl">${m.fl||'⚽'}</span>${m.o}</div><div class="o2">${m.d}${m.ha?(' · '+m.ha+'场'):''}${m.comp?(' · '+m.comp):''}</div></div>
+      <div class="opp"><div class="o1"><span class="fl">${m.logo?mk(m.logo):(m.fl||'⚽')}</span>${m.o}</div><div class="o2">${m.d}${m.ha?(' · '+m.ha+'场'):''}${m.comp?(' · '+m.comp):''}</div></div>
       <div class="msc">${m.gf}:${m.ga}</div>
-      ${m.poss!=null?`<div class="mx">控 ${m.poss}% · 射 ${m.sh}<b>xG ${(m.xg||0).toFixed(1)}</b></div>`:'<div class="mx"></div>'}
+      ${(cs||xgp)?`<div class="mx">${cs}${xgp}</div>`:'<div class="mx"></div>'}
     </div>${goalLine(m)}</div>`;
   }).join('') : '<div style="color:var(--faint);padding:14px">暂无已结束的比赛</div>';
 }
-/* ---------- 实时：全部赛事 + 每球进球(时间/球员/加时/点球) ---------- */
-async function fetchTeamLog(apiId){
-  const fx=await api(`/fixtures?team=${apiId}&league=${CONFIG.LEAGUE_ID}&season=${CONFIG.SEASON}`);
-  if(!fx) return [];
+/* ---------- 实时：近 N 场(跨赛事，开赛后世界杯场次自动并入) + 核心数据 + 进球 + 累计黄牌 ---------- */
+async function fetchTeamCore(apiId){
+  const fx=await api(`/fixtures?team=${apiId}&last=14`);
+  if(!fx) return {mlog:[],cards:{}};
   const done=fx.filter(f=>['FT','AET','PEN'].includes(f.fixture.status.short))
                .sort((a,b)=>new Date(b.fixture.date)-new Date(a.fixture.date));
-  const out=[];
+  const out=[], cards={};
   for(const f of done){
-    const isHome=f.teams.home.id===apiId;
+    const isHome=f.teams.home.id===apiId, opp=isHome?f.teams.away:f.teams.home;
     const gf=isHome?f.goals.home:f.goals.away, ga=isHome?f.goals.away:f.goals.home;
     const st=f.fixture.status.short, dt=new Date(f.fixture.date);
-    const m={ d:`${dt.getMonth()+1}-${String(dt.getDate()).padStart(2,'0')}`, fl:'⚽',
-      o:isHome?f.teams.away.name:f.teams.home.name, ha:isHome?'主':'客',
-      gf, ga, res:(gf>ga?'w':gf<ga?'l':'d'), comp:roundCN(f.league.round),
-      et:(st==='AET'||st==='PEN'), pen:(st==='PEN'), poss:null, goals:[] };
+    const isWC=f.league && f.league.id===CONFIG.LEAGUE_ID;
+    const m={ d:`${dt.getMonth()+1}-${String(dt.getDate()).padStart(2,'0')}`, fl:'⚽', logo:opp.logo,
+      o:opp.name, ha:isHome?'主':'客', gf, ga, res:(gf>ga?'w':gf<ga?'l':'d'),
+      comp:(f.league&&(isWC?roundCN(f.league.round):f.league.name))||'', et:(st==='AET'||st==='PEN'), pen:(st==='PEN'),
+      poss:null, sh:null, sot:null, xg:null, cor:null, goals:[] };
+    try{
+      const stt=await api(`/fixtures/statistics?fixture=${f.fixture.id}`);
+      const side=(stt||[]).find(x=>x.team.id===apiId);
+      if(side&&side.statistics){ const g=ty=>{const o=side.statistics.find(s=>s.type===ty);return o?o.value:null;};
+        const num=v=>{const x=parseFloat(String(v==null?'':v).replace('%',''));return isNaN(x)?null:x;};
+        m.poss=num(g('Ball Possession')); m.sh=num(g('Total Shots')); m.sot=num(g('Shots on Goal'));
+        m.xg=num(g('expected_goals')); m.cor=num(g('Corner Kicks'));
+      }
+    }catch(_){}
     try{
       const ev=await api(`/fixtures/events?fixture=${f.fixture.id}`);
       (ev||[]).forEach(e=>{
@@ -783,11 +802,14 @@ async function fetchTeamLog(apiId){
           m.goals.push({ t:e.time.elapsed||0, x:e.time.extra||0, s:(e.player&&e.player.name)||'—', mine, pen:/Penalty/i.test(e.detail||''), og });
           if((e.time.elapsed||0)>90) m.et=true;
         }
+        if(isWC && e.type==='Card' && /Yellow/i.test(e.detail||'') && e.team && e.team.id===apiId && e.player){
+          cards[e.player.name]=(cards[e.player.name]||0)+1;   // 仅世界杯黄牌计入停赛累计
+        }
       });
     }catch(_){}
     out.push(m);
   }
-  return out;
+  return {mlog:out, cards};
 }
 let liveTeams=[];
 async function renderTeamsLive(){
@@ -804,15 +826,15 @@ async function renderTeamsLive(){
       </div>`).join('');
     const sub=document.querySelector('#v-teams .vhead .sub'); if(sub) sub.textContent='全部参赛球队';
     const stt=document.querySelector('#v-teams .section-t'); if(stt) stt.textContent='点击查看每队全部赛事与进球';
-    const fn=document.querySelector('#v-teams .foot-note'); if(fn) fn.innerHTML='数据来自官方接口 · 含每场进球时间、射手、是否加时';
+    const fn=document.querySelector('#v-teams .foot-note'); if(fn) fn.innerHTML='官方数据 · 含近期核心数据、进球(时间/射手)、累计黄牌与停赛风险';
   }catch(e){ console.warn('实时球队列表失败，保留演示：',e); }
 }
 async function showTeamLive(idx){
   const lt=liveTeams[idx]; if(!lt) return;
-  teams[8]={nm:lt.nm, fl:'⚽', logo:lt.logo, elo:'—', ch:'—', live:true, apiId:lt.apiId, mlog:[]};
+  teams[8]={nm:lt.nm, fl:'⚽', logo:lt.logo, elo:'—', ch:'—', live:true, apiId:lt.apiId, mlog:[], cards:{}};
   showTeam(8);
-  document.getElementById('tdLog').innerHTML='<div style="color:var(--faint);padding:14px">加载全部赛事与进球…</div>';
-  try{ teams[8].mlog=await fetchTeamLog(lt.apiId); showTeam(8); }
+  document.getElementById('tdLog').innerHTML='<div style="color:var(--faint);padding:14px">加载近期赛事、核心数据与进球…</div>';
+  try{ const r=await fetchTeamCore(lt.apiId); teams[8].mlog=r.mlog; teams[8].cards=r.cards; showTeam(8); }
   catch(e){ document.getElementById('tdLog').innerHTML='<div style="color:var(--faint);padding:14px">暂未获取到赛事数据</div>'; }
 }
 if(LIVE){ renderTeamsLive(); }
@@ -821,11 +843,11 @@ document.getElementById('tdBack').onclick=()=>show('teams');
 /* ===================== 实时数据 + 预测模型 ===================== */
 /* —— 配置：在 api-football.com 注册拿到 key，填入 API_KEY，再把 USE_LIVE 改为 true —— */
 const CONFIG = {
-  USE_LIVE: true,                  // 启用真实数据：改成 true
-  SERVER_BASE: 'https://worldcup-rmyw.onrender.com',                  // ★分发推荐：填你的代理地址(如 https://xxx.onrender.com)；填了就走代理，客户端不需要 key
+  USE_LIVE: true,                   // 已开启实时；由服务器托管时自动用当前域名取数（无需填 SERVER_BASE/API_KEY）
+  SERVER_BASE: '',                  // ★分发推荐：填你的代理地址(如 https://xxx.onrender.com)；填了就走代理，客户端不需要 key
   API_KEY:  '',                     // 仅"直连官方"(单人测试)时需要；走代理时留空
   API_BASE: 'https://v3.football.api-sports.io',
-  POLL_MS:  10000,                  // 实时刷新间隔（毫秒）
+  POLL_MS:  30000,                  // 实时刷新间隔（毫秒）
   PRED_MS:  300000,                 // 实时预测重算间隔：5 分钟（进球时也会立即重算）
   LEAGUE_ID: 1,                     // 1 = FIFA World Cup
   SEASON:   2026,
@@ -834,8 +856,11 @@ const CONFIG = {
   MAX_GOALS: 6,
   FORM_N: 10                        // 球员"近期表现"展示的场次数（可调大，如 15/20）
 };
-const USE_SERVER = CONFIG.USE_LIVE && CONFIG.SERVER_BASE.length > 0;          // 走共享代理
-const LIVE = CONFIG.USE_LIVE && (USE_SERVER || CONFIG.API_KEY.length > 0);     // 实时(代理或直连)
+// 若网页由服务器自身托管(http/https) 且未填 SERVER_BASE，自动用当前域名作为数据源
+const autoBase = (typeof location!=='undefined' && /^https?:$/.test(location.protocol)) ? location.origin : '';
+const SERVER_BASE = (CONFIG.SERVER_BASE && CONFIG.SERVER_BASE.length) ? CONFIG.SERVER_BASE : (CONFIG.API_KEY.length ? '' : autoBase);
+const USE_SERVER = CONFIG.USE_LIVE && SERVER_BASE.length > 0 && CONFIG.API_KEY.length === 0;   // 走共享代理(含自动同源)
+const LIVE = CONFIG.USE_LIVE && (USE_SERVER || CONFIG.API_KEY.length > 0);                      // 实时(代理或直连)
 let liveScoreList = null;           // 实时模型算出的比分榜，供 topScores 使用
 
 /* —— 泊松 / Dixon-Coles 简化预测引擎（与第二轮讨论的模型一致）—— */
@@ -905,7 +930,7 @@ async function api(path){
     const stale=Cache.mem[path]; if(stale) return stale.v;
     throw new Error('QUOTA_EXCEEDED');
   }
-  const base    = USE_SERVER ? CONFIG.SERVER_BASE : CONFIG.API_BASE;
+  const base    = USE_SERVER ? SERVER_BASE : CONFIG.API_BASE;
   const headers = USE_SERVER ? {} : {'x-apisports-key':CONFIG.API_KEY};
   const r=await fetch(base+path,{headers});
   if(!USE_SERVER) Quota.spend();                             // 代理模式不计客户端额度(服务器统一管)

@@ -110,8 +110,8 @@ const server = http.createServer(async (req, res) => {
 
   // 托管网页：访问根路径直接打开 App
   if (req.method === 'GET' && (u.pathname === '/' || u.pathname === '/index.html' || u.pathname === '/app')) {
-    if (PAGE) { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); return res.end(PAGE); }
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    if (PAGE) { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store, must-revalidate' }); return res.end(PAGE); }
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
     return res.end('<meta charset="utf-8"><body style="font-family:sans-serif;padding:40px;line-height:1.8">数据代理服务器运行中 ✅<br>把网页文件（worldcup_predict_live.html 或 index.html）放到本服务同一个仓库，重新部署即可在此直接打开 App。<br>查看官方用量：<a href="/admin/status">/admin/status</a></body>');
   }
 

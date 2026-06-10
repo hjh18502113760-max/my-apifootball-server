@@ -28,6 +28,15 @@ const SEASON     = process.env.SEASON || '2026';
 const WARM       = (process.env.WARM || 'off') === 'on';
 const WARM_MS    = parseInt(process.env.WARM_MS || '30000', 10);
 
+/* ---------- AI 助手（火山方舟·豆包）---------- */
+const ARK_API_KEY  = process.env.ARK_API_KEY || '';
+const ARK_MODEL    = process.env.ARK_MODEL || 'doubao-seed-2-0-lite-260428';
+const ARK_BASE     = process.env.ARK_BASE || 'https://ark.cn-beijing.volces.com/api/v3';
+const AI_DAILY_CAP = parseInt(process.env.AI_DAILY_CAP || '2000', 10);   // AI 每日调用上限
+const AI_MAX_TOKENS= parseInt(process.env.AI_MAX_TOKENS || '500', 10);   // 单条回复 token 上限
+const AI_HOURLY    = parseInt(process.env.AI_HOURLY_PER_IP || '150', 10);// 每 IP 每小时上限
+const AI_SYSTEM = '你是「世界杯胜率预测」App 内的 AI 助手（基于豆包）。用简体中文、简洁口语化地回答用户关于 2026 世界杯、足球规则与术语（如 xG、越位、点球、Dixon-Coles 模型）、赛制、参赛球队等问题。回答尽量控制在 5 句话内，必要时用简短分点。不要编造确定的比分或结果；遇到“实时比分/具体赛程/某队最新阵容”这类问题，可简要回答并提示用户查看 App 内对应页面（实况 / 赛程 / 球队）。';
+
 if (!API_KEY) console.warn('⚠ 未设置环境变量 API_KEY，将无法调用官方 API');
 
 /* ---------- 可选：托管网页本体（同目录有 html 文件就一并提供）---------- */
@@ -60,6 +69,27 @@ function ttlFor(path) {
 const today = () => new Date().toISOString().slice(0, 10);
 let usage = { day: today(), count: 0 };
 function rollover() { if (usage.day !== today()) usage = { day: today(), count: 0 }; }
+
+/* ---------- AI 用量：每日总量 + 每 IP 每小时限流 ---------- */
+let aiUsage = { day: today(), count: 0 };
+function aiRollover() { if (aiUsage.day !== today()) aiUsage = { day: today(), count: 0 }; }
+const aiIpHits = new Map();              // ip -> { hour, count }
+function aiIpAllowed(ip) {
+  const h = Math.floor(Date.now() / 3600e3);
+  if (aiIpHits.size > 5000) { for (const [k, v] of aiIpHits) if (v.hour !== h) aiIpHits.delete(k); }
+  let rec = aiIpHits.get(ip);
+  if (!rec || rec.hour !== h) { rec = { hour: h, count: 0 }; aiIpHits.set(ip, rec); }
+  if (rec.count >= AI_HOURLY) return false;
+  rec.count++; return true;
+}
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    let data = '', size = 0;
+    req.on('data', c => { size += c.length; if (size > 100000) { reject(new Error('body too large')); req.destroy(); } else data += c; });
+    req.on('end', () => resolve(data));
+    req.on('error', reject);
+  });
+}
 
 /* ---------- 并发去重 + 取数 ---------- */
 const inflight = new Map();            // path -> Promise<string>
@@ -98,7 +128,7 @@ function getData(path) {
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': '*',
-  'Access-Control-Allow-Methods': 'GET,OPTIONS',
+  'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
   'Content-Type': 'application/json; charset=utf-8'
 };
 const ALLOW = /^\/(fixtures|teams|players|injuries|standings|leagues|coachs|transfers|trophies|sidelined|venues|status)\b/;
@@ -142,12 +172,47 @@ const server = http.createServer(async (req, res) => {
     } catch (e) {}
   }
 
+  // AI 助手：把对话转发给火山方舟·豆包（API key 仅存于服务器端）
+  if (u.pathname === '/ai/chat') {
+    if (req.method !== 'POST') { res.writeHead(405, CORS); return res.end(JSON.stringify({ error: 'method not allowed' })); }
+    if (!ARK_API_KEY) { res.writeHead(200, CORS); return res.end(JSON.stringify({ error: 'AI 暂未配置（服务器缺少 ARK_API_KEY）' })); }
+    const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || (req.socket && req.socket.remoteAddress) || 'unknown';
+    aiRollover();
+    if (aiUsage.count >= AI_DAILY_CAP) { res.writeHead(200, CORS); return res.end(JSON.stringify({ error: '今日 AI 提问额度已用完，明天再来聊吧～' })); }
+    if (!aiIpAllowed(ip)) { res.writeHead(200, CORS); return res.end(JSON.stringify({ error: '提问有点频繁，歇一会儿再问吧（已达每小时上限）。' })); }
+    try {
+      const raw = await readBody(req);
+      let body = {}; try { body = JSON.parse(raw || '{}'); } catch (_) {}
+      let msgs = Array.isArray(body.messages) ? body.messages : [];
+      msgs = msgs.filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
+                 .slice(-8).map(m => ({ role: m.role, content: String(m.content).slice(0, 2000) }));
+      if (!msgs.length) { res.writeHead(200, CORS); return res.end(JSON.stringify({ error: '消息为空' })); }
+      const payload = { model: ARK_MODEL, messages: [{ role: 'system', content: AI_SYSTEM }, ...msgs], max_tokens: AI_MAX_TOKENS, temperature: 0.7 };
+      const r = await fetch(ARK_BASE + '/chat/completions', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + ARK_API_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const txt = await r.text();
+      if (!r.ok) { res.writeHead(200, CORS); return res.end(JSON.stringify({ error: 'AI 服务暂时不可用（' + r.status + '），请稍后再试' })); }
+      aiUsage.count++;
+      let reply = '';
+      try { const j = JSON.parse(txt); reply = (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || ''; } catch (_) {}
+      res.writeHead(200, CORS);
+      return res.end(JSON.stringify({ reply: reply || '（这次没有返回内容，换个问法再试试～）' }));
+    } catch (e) {
+      res.writeHead(200, CORS);
+      return res.end(JSON.stringify({ error: 'AI 请求失败，请稍后重试' }));
+    }
+  }
+
   if (u.pathname === '/admin/status') {        // 监控官方用量
-    rollover();
+    rollover(); aiRollover();
     res.writeHead(200, CORS);
     return res.end(JSON.stringify({
       day: usage.day, used: usage.count, cap: DAILY_CAP,
-      left: Math.max(0, DAILY_CAP - usage.count), cached: cache.size
+      left: Math.max(0, DAILY_CAP - usage.count), cached: cache.size,
+      ai: { used: aiUsage.count, cap: AI_DAILY_CAP, left: Math.max(0, AI_DAILY_CAP - aiUsage.count), configured: !!ARK_API_KEY }
     }));
   }
 
@@ -173,6 +238,7 @@ if (WARM) {
 server.listen(PORT, () => {
   console.log(`代理服务器已启动 http://localhost:${PORT}  官方每日上限=${DAILY_CAP}  预热=${WARM ? 'on' : 'off'}`);
   console.log('网页托管: ' + (PAGE ? ('开启 (' + PAGE_NAME + ')') : '未找到页面文件，仅作数据代理'));
+  console.log('AI 助手(豆包): ' + (ARK_API_KEY ? ('已配置 · 模型=' + ARK_MODEL + ' · 每日上限=' + AI_DAILY_CAP) : '未配置(设置 ARK_API_KEY 后启用)'));
 });
 
 module.exports = server;   // 便于自动化测试引用

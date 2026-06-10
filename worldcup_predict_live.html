@@ -2,7 +2,8 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="format-detection" content="telephone=no">
 <link rel="apple-touch-icon" href="/icon-180.png">
 <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
 <link rel="manifest" href="/manifest.webmanifest">
@@ -26,7 +27,7 @@
   --num:'Anton',sans-serif; --ui:'Archivo','Noto Sans SC',sans-serif;
 }
 *{margin:0;padding:0;box-sizing:border-box}
-html,body{height:100%}
+html,body{height:100%; -webkit-text-size-adjust:100%; text-size-adjust:100%; touch-action:manipulation}
 body{
   font-family:var(--ui); color:var(--txt);
   background:var(--bg);
@@ -1027,12 +1028,26 @@ function showQuotaExhausted(){
   renderQuota();
 }
 async function teamStrength(id){
+  const clamp=x=>Math.max(0.55, Math.min(1.85, x));
   try{
     const r=await api(`/teams/statistics?team=${id}&league=${CONFIG.LEAGUE_ID}&season=${CONFIG.SEASON}`);
-    const gf=parseFloat(r.goals.for.average.total)||CONFIG.LEAGUE_AVG;
-    const ga=parseFloat(r.goals.against.average.total)||CONFIG.LEAGUE_AVG;
-    return {attack:gf/CONFIG.LEAGUE_AVG, defense:ga/CONFIG.LEAGUE_AVG};
-  }catch(e){return {attack:1,defense:1};}
+    const played=(r&&r.fixtures&&r.fixtures.played&&r.fixtures.played.total)||0;
+    if(played>0){
+      const gf=parseFloat(r.goals.for.average.total)||CONFIG.LEAGUE_AVG;
+      const ga=parseFloat(r.goals.against.average.total)||CONFIG.LEAGUE_AVG;
+      return {attack:clamp(gf/CONFIG.LEAGUE_AVG), defense:clamp(ga/CONFIG.LEAGUE_AVG)};
+    }
+  }catch(e){}
+  try{
+    const fx=await api(`/fixtures?team=${id}&last=12`);
+    const done=(fx||[]).filter(f=>['FT','AET','PEN'].includes(f.fixture.status.short));
+    if(done.length>=3){
+      let gf=0,ga=0;
+      done.forEach(f=>{ const home=f.teams.home.id===id; gf+=(home?f.goals.home:f.goals.away)||0; ga+=(home?f.goals.away:f.goals.home)||0; });
+      return {attack:clamp((gf/done.length)/CONFIG.LEAGUE_AVG), defense:clamp((ga/done.length)/CONFIG.LEAGUE_AVG)};
+    }
+  }catch(e){}
+  return {attack:1,defense:1};
 }
 function pickStat(team,type){const o=team.statistics.find(x=>x.type===type);return o?o.value:null;}
 async function liveStats(fixtureId){
@@ -1345,12 +1360,28 @@ document.getElementById('pdBack').onclick=()=>playerOriginFn();
 const POS_GRID={G:'GK',D:'DF',M:'MF',F:'FW'};
 function posWeight(pos){ return {FW:0.26,MF:0.20,DF:0.15,GK:0.18}[pos]||0.15; }
 async function teamBaseLive(id){
+  const clamp=x=>Math.max(0.55, Math.min(1.85, x));
+  // ① 本届世界杯统计（开赛后才有数据）
   try{
     const r=await api(`/teams/statistics?team=${id}&league=${CONFIG.LEAGUE_ID}&season=${CONFIG.SEASON}`);
-    const gf=parseFloat(r.goals.for.average.total)||CONFIG.LEAGUE_AVG;
-    const ga=parseFloat(r.goals.against.average.total)||CONFIG.LEAGUE_AVG;
-    return {att:gf/CONFIG.LEAGUE_AVG, def:CONFIG.LEAGUE_AVG/Math.max(0.4,ga)};
-  }catch(e){return {att:1,def:1};}
+    const played=(r&&r.fixtures&&r.fixtures.played&&r.fixtures.played.total)||0;
+    if(played>0){
+      const gf=parseFloat(r.goals.for.average.total)||CONFIG.LEAGUE_AVG;
+      const ga=parseFloat(r.goals.against.average.total)||CONFIG.LEAGUE_AVG;
+      return {att:clamp(gf/CONFIG.LEAGUE_AVG), def:clamp(CONFIG.LEAGUE_AVG/Math.max(0.4,ga))};
+    }
+  }catch(e){}
+  // ② 开赛前回退：该队近 12 场真实战绩（跨赛事：友谊赛/预选赛/国家联赛等）→ 各队实力不同
+  try{
+    const fx=await api(`/fixtures?team=${id}&last=12`);
+    const done=(fx||[]).filter(f=>['FT','AET','PEN'].includes(f.fixture.status.short));
+    if(done.length>=3){
+      let gf=0,ga=0;
+      done.forEach(f=>{ const home=f.teams.home.id===id; gf+=(home?f.goals.home:f.goals.away)||0; ga+=(home?f.goals.away:f.goals.home)||0; });
+      return {att:clamp((gf/done.length)/CONFIG.LEAGUE_AVG), def:clamp(CONFIG.LEAGUE_AVG/Math.max(0.4, ga/done.length))};
+    }
+  }catch(e){}
+  return {att:1,def:1};
 }
 async function injuredNames(teamId){      // 伤停名单 → {球员名: 'inj'|'sus'}
   try{
@@ -1652,6 +1683,11 @@ else { clearLiveBoard('demo'); }
   textEl.addEventListener('input',()=>{ textEl.style.height='auto'; textEl.style.height=Math.min(textEl.scrollHeight,96)+'px'; });
   if(chips){ chips.querySelectorAll('button').forEach(b=>b.onclick=()=>ask(b.textContent)); }
 })();
+/* 禁止 iOS 双指缩放（user-scalable 在 iOS Safari 会被忽略，用手势拦截兜底） */
+document.addEventListener('gesturestart', e=>e.preventDefault());
+document.addEventListener('gesturechange', e=>e.preventDefault());
+let _lastTouchEnd=0;
+document.addEventListener('touchend', e=>{ const n=Date.now(); if(n-_lastTouchEnd<300) e.preventDefault(); _lastTouchEnd=n; }, {passive:false});
 </script>
 </body>
 </html>

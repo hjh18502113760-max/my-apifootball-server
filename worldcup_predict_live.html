@@ -314,19 +314,19 @@ canvas{width:100%; height:128px; display:block}
 
           <div class="board">
             <div class="comp">
-              <span>2026 世界杯 · 小组赛 C 组</span>
-              <span class="livepill"><span class="dot"></span>LIVE</span>
+              <span>2026 世界杯</span>
+              <span class="livepill" style="display:none"><span class="dot"></span>LIVE</span>
             </div>
             <div class="scoreline">
-              <div class="team"><span class="flag" id="flagA">🇧🇷</span><span class="tname" id="tnameA">巴西</span></div>
-              <div class="score"><span id="sA">1</span><span class="sep">:</span><span id="sB">0</span></div>
-              <div class="team"><span class="flag" id="flagB">🇪🇸</span><span class="tname" id="tnameB">西班牙</span></div>
+              <div class="team"><span class="flag" id="flagA">⚽</span><span class="tname" id="tnameA">—</span></div>
+              <div class="score"><span id="sA">–</span><span class="sep">:</span><span id="sB">–</span></div>
+              <div class="team"><span class="flag" id="flagB">⚽</span><span class="tname" id="tnameB">—</span></div>
             </div>
-            <div class="clock"><span id="clk">67</span>′ &nbsp;上半场结束 · 进行中</div>
+            <div class="clock"><span id="clk">加载中…</span></div>
             <div class="momentum">
-              <i class="mom-a" id="mA" style="width:71%"></i>
-              <i class="mom-d" id="mD" style="width:19%"></i>
-              <i class="mom-b" id="mB" style="width:10%"></i>
+              <i class="mom-a" id="mA" style="width:0%"></i>
+              <i class="mom-d" id="mD" style="width:100%"></i>
+              <i class="mom-b" id="mB" style="width:0%"></i>
             </div>
           </div>
 
@@ -336,11 +336,11 @@ canvas{width:100%; height:128px; display:block}
           <div class="section-t">实时预测</div>
           <div class="predcard">
             <div class="tri">
-              <i class="ta" id="tA" style="flex-basis:71%">71%</i>
-              <i class="td" id="tD" style="flex-basis:19%">19%</i>
-              <i class="tb" id="tB" style="flex-basis:10%">10%</i>
+              <i class="ta" id="tA" style="flex-basis:33%">—</i>
+              <i class="td" id="tD" style="flex-basis:34%">—</i>
+              <i class="tb" id="tB" style="flex-basis:33%">—</i>
             </div>
-            <div class="trilab"><span id="labA">巴西 胜</span><span>平局</span><span id="labB">西班牙 胜</span></div>
+            <div class="trilab"><span id="labA">主队 胜</span><span>平局</span><span id="labB">客队 胜</span></div>
           </div>
 
           <div class="scores" id="topScores"></div>
@@ -348,7 +348,7 @@ canvas{width:100%; height:128px; display:block}
           <div class="chartcard">
             <div class="ch-h">
               <span class="t">胜率走势</span>
-              <span class="leg"><span><i style="background:var(--a)"></i>巴西</span><span><i style="background:var(--b)"></i>西班牙</span></span>
+              <span class="leg"><span><i style="background:var(--a)"></i>主队</span><span><i style="background:var(--b)"></i>客队</span></span>
             </div>
             <canvas id="trend"></canvas>
           </div>
@@ -430,7 +430,7 @@ canvas{width:100%; height:128px; display:block}
           </div>
 
           <div class="daygroup">
-            <div class="dayhead">示例分析 · 演示数据（可点开体验）</div>
+            <div class="dayhead">示例界面 · 不含真实数据（点击预览功能）</div>
             <div class="fix" onclick="openMatchup(1,3)">
               <div class="time">DEMO<small>赛前</small></div>
               <div class="match">
@@ -672,13 +672,13 @@ const squads=[
 ];
 
 document.getElementById('teamList').innerHTML=teams.map((t,i)=>`
-  <div class="trow ${i<3?'top':''}" onclick="showTeam(${i})">
+  <div class="trow" onclick="showTeam(${i})">
     <div class="rk">${i+1}</div>
     <div class="info">
-      <div class="nm"><span class="fl">${t.fl}</span>${t.nm}<span class="elo">${t.elo}</span></div>
-      <div class="form">${t.form.map(f=>`<i class="${f}">${f.toUpperCase()}</i>`).join('')}</div>
+      <div class="nm"><span class="fl">${t.fl}</span>${t.nm}<span class="elo">—</span></div>
+      <div class="form" style="color:var(--faint);font-size:11px;letter-spacing:.04em">示例 · 不含真实数据</div>
     </div>
-    <div class="champ"><div class="lbl">夺冠</div><div class="pct">${t.ch}%</div></div>
+    <div class="champ"><div class="lbl">夺冠</div><div class="pct">—</div></div>
   </div>`).join('');
 
 /* ---------- team detail ---------- */
@@ -715,9 +715,18 @@ function showTeam(i){
   const flagEl=document.getElementById('tdFlag');
   if(t.logo){ flagEl.innerHTML=`<img src="${t.logo}" alt="" style="width:30px;height:30px;object-fit:contain;vertical-align:middle">`; } else { flagEl.textContent=t.fl; }
   document.getElementById('tdName').textContent=t.nm;
-  document.getElementById('tdSm').innerHTML = t.live
-    ? `近况 ${w}胜${d}平${l}负 · 共 ${mlog.length} 场`
-    : `Elo <b>${t.elo}</b> · 夺冠 <b>${t.ch}%</b> · 近况 ${w}胜${d}平${l}负`;
+  if(!t.live){   // 演示球队：零数据骨架，仅保留界面结构
+    document.getElementById('tdSm').textContent='示例 · 不含真实数据';
+    document.getElementById('tdAggTitle').textContent='综合统计';
+    document.getElementById('tdAgg').innerHTML=[['场均进球','—'],['场均失球','—'],['场均 xG','—'],['场均控球','—'],['胜率','—'],['夺冠概率','—']].map(a=>`<div class="agg"><div class="v">${a[1]}</div><div class="k">${a[0]}</div></div>`).join('');
+    const st2=document.querySelector('#v-teamdetail .section-t:nth-of-type(2)'); if(st2) st2.textContent='主力球员';
+    const wn=document.getElementById('tdSquadWarn'); wn.className='squad-warn';
+    wn.innerHTML='<div style="background:rgba(198,255,68,.06);border:1px solid rgba(198,255,68,.22);border-radius:12px;padding:12px 14px;font-size:12.5px;line-height:1.7;color:var(--muted)">界面示例，<b>不含真实或预测数据</b>。接入实时数据后，这里显示真实的球队核心数据、球员状态与赛事明细。</div>';
+    document.getElementById('tdSquad').innerHTML='';
+    document.getElementById('tdLog').innerHTML='<div style="color:var(--faint);padding:14px">示例 · 暂无数据</div>';
+    return;
+  }
+  document.getElementById('tdSm').innerHTML = `近况 ${w}胜${d}平${l}负 · 共 ${mlog.length} 场`;
   const avg=k=>{ const v=mlog.filter(m=>m[k]!=null); return v.length? v.reduce((a,m)=>a+m[k],0)/v.length : null; };
   const fmt=(x,dd)=>x==null?'—':(+x).toFixed(dd);
   document.getElementById('tdAggTitle').textContent = t.live ? `近期核心数据 · ${mlog.length} 场` : `综合统计 · ${n} 场`;
@@ -846,7 +855,7 @@ const CONFIG = {
   SERVER_BASE: '',                  // ★分发推荐：填你的代理地址(如 https://xxx.onrender.com)；填了就走代理，客户端不需要 key
   API_KEY:  '',                     // 仅"直连官方"(单人测试)时需要；走代理时留空
   API_BASE: 'https://v3.football.api-sports.io',
-  POLL_MS:  30000,                  // 实时刷新间隔（毫秒）
+  POLL_MS:  15000,                  // 实时刷新间隔（毫秒）
   PRED_MS:  300000,                 // 实时预测重算间隔：5 分钟（进球时也会立即重算）
   LEAGUE_ID: 1,                     // 1 = FIFA World Cup
   SEASON:   2026,
@@ -1104,14 +1113,34 @@ function openMatchup(iH,iA,stage){
   matchupTeams=[iH,iA];
   hideAllViews(); document.getElementById('v-matchup').classList.add('on'); document.getElementById('body').scrollTop=0;
   tabs.forEach(x=>x.classList.remove('on'));
-  const H=teams[iH], A=teams[iA], pr=predictMatch(iH,iA,stage);
+  const H=teams[iH], A=teams[iA];
   document.getElementById('mhFlagA').innerHTML=H.logo?mk(H.logo):H.fl; document.getElementById('mhNameA').textContent=H.nm;
   document.getElementById('mhFlagB').innerHTML=A.logo?mk(A.logo):A.fl; document.getElementById('mhNameB').textContent=A.nm;
   document.getElementById('mhLhA').textContent=H.nm; document.getElementById('mhLhB').textContent=A.nm;
-  document.querySelector('#v-matchup .tdhead .sm').textContent = stage==='ko' ? '淘汰赛 · 90分钟 + 加时 + 点球' : '小组赛 · 北京时间 23:00 开球';
-  setTri('mh', pr.a, pr.d, pr.b);
   document.getElementById('mhLabA').textContent=H.nm+' 胜';
   document.getElementById('mhLabB').textContent=A.nm+' 胜';
+  const comp=document.querySelector('#v-matchup .comp span:first-child');
+  const tag=document.querySelector('#v-matchup .comp .demo-tag');
+  const isLiveMatch=(iH===6 && iA===7);   // 实时对阵使用 teams[6/7]
+  if(!isLiveMatch){
+    // —— 示例：全部数值归零，仅保留界面骨架 ——
+    document.querySelector('#v-matchup .tdhead .sm').textContent='示例界面 · 不含真实数据';
+    if(comp) comp.textContent='示例演示 · 非真实预测';
+    if(tag) tag.textContent='示例';
+    ['mhA','mhD','mhB'].forEach((id,k)=>{const e=document.getElementById(id); e.textContent='—'; e.style.flexBasis=(k===1?34:33)+'%';});
+    document.getElementById('mhKoTitle').style.display='none'; document.getElementById('mhKoSection').style.display='none';
+    document.getElementById('mhImpact').innerHTML='<div style="background:rgba(198,255,68,.06);border:1px solid rgba(198,255,68,.22);border-radius:12px;padding:12px 14px;font-size:12.5px;line-height:1.7;color:var(--muted)">这是<b style="color:var(--a)">界面示例</b>，<b>不含任何真实或预测数据</b>。接入实时数据、且赛事开始后，这里会显示真实的赛前胜率、比分概率与出场阵容分析。</div>';
+    document.getElementById('mhScores').innerHTML=['最可能','次可能','第三'].map(l=>`<div class="sc"><div class="rank">${l}</div><div class="v">—</div><div class="p">—</div><div class="pb"><i style="width:0%"></i></div></div>`).join('');
+    document.getElementById('mhLineA').innerHTML='<div style="color:var(--faint);padding:10px 2px;font-size:13px">示例 · 暂无数据</div>';
+    document.getElementById('mhLineB').innerHTML='<div style="color:var(--faint);padding:10px 2px;font-size:13px">示例 · 暂无数据</div>';
+    return;
+  }
+  // —— 实时真实对阵 ——
+  if(comp) comp.textContent='赛前预测 · 已计入伤停';
+  if(tag) tag.textContent='模型';
+  const pr=predictMatch(iH,iA,stage);
+  document.querySelector('#v-matchup .tdhead .sm').textContent = stage==='ko' ? '淘汰赛 · 90分钟 + 加时 + 点球' : '赛前预测';
+  setTri('mh', pr.a, pr.d, pr.b);
   const koT=document.getElementById('mhKoTitle'), koS=document.getElementById('mhKoSection');
   if(stage==='ko' && pr.ko){
     koT.style.display=''; koS.style.display='';
@@ -1295,6 +1324,11 @@ async function openMatchupLive(fixtureId){
     squadOut[6]=outH;     squadOut[7]=outA;
     const round=(fx.league&&fx.league.round)||'';
     openMatchup(6,7, /group|小组/i.test(round)?'group':'ko');
+    const st=fx.fixture.status.short;
+    if(!['1H','2H','HT','ET','BT','P','LIVE','FT','AET','PEN'].includes(st)){
+      const im=document.getElementById('mhImpact');
+      im.innerHTML='<div style="background:rgba(77,168,255,.07);border:1px solid rgba(77,168,255,.25);border-radius:12px;padding:11px 14px;font-size:12px;line-height:1.7;color:var(--muted);margin-bottom:10px">开赛前可用数据有限，预测<b>仅供参考</b>；临近开球（约赛前 1 小时）公布首发后会明显更准。</div>'+im.innerHTML;
+    }
   }catch(e){ console.warn('实时对阵获取失败：',e); }
 }
 function roundCN(r){
@@ -1408,7 +1442,7 @@ function renderPred(){
     <div class="sc"><div class="rank">${labs[i]}</div><div class="v">${s[0]}</div><div class="p">${s[1]}%</div>
     <div class="pb"><i style="width:${s[1]/mx*100}%"></i></div></div>`).join('');
 }
-function setScore(){document.getElementById('sA').textContent=sA; document.getElementById('sB').textContent=sB; document.getElementById('clk').textContent=minute;}
+function setScore(){document.getElementById('sA').textContent=sA; document.getElementById('sB').textContent=sB; document.getElementById('clk').textContent=minute+'′';}
 renderPred(); setScore();
 
 /* canvas trend */
@@ -1422,6 +1456,7 @@ function drawTrend(){
   cx.strokeStyle='rgba(255,255,255,.06)'; cx.lineWidth=1;
   [25,50,75].forEach(p=>{cx.beginPath();cx.moveTo(0,Y(p));cx.lineTo(w,Y(p));cx.stroke();});
   cx.strokeStyle='rgba(255,255,255,.09)'; cx.beginPath();cx.moveTo(0,Y(50));cx.lineTo(w,Y(50));cx.stroke();
+  if(!hist.length) return;   // 无实时数据：仅显示网格
   const line=(key,col)=>{
     cx.beginPath();
     hist.forEach((d,i)=>{const x=X(d.m),y=Y(d[key]); i?cx.lineTo(x,y):cx.moveTo(x,y);});
@@ -1435,22 +1470,6 @@ drawTrend();
 window.addEventListener('resize',drawTrend);
 
 /* ===================== 刷新循环（实时 / 演示 自动切换）===================== */
-function mockTick(){
-  if(minute>=90){document.getElementById('clk').textContent='90';return;}
-  minute++;
-  pA=clamp(pA+(Math.random()-0.48)*4,6,90);
-  pB=clamp(pB+(Math.random()-0.5)*3,4,70);
-  if(Math.random()<0.05){
-    if(Math.random()<0.62){sA++; pA=clamp(pA+13,6,92); pB=clamp(pB-7,4,70);}
-    else{sB++; pB=clamp(pB+15,4,75); pA=clamp(pA-16,6,90);}
-  }
-  norm();
-  statDefs.forEach(s=>{ if(Math.random()<0.4){ (Math.random()<0.62?s.a+=(s.dec?0.03:1):s.b+=(s.dec?0.02:1)); }});
-  statDefs[0].a=clamp(54+(Math.random()*8),45,65); statDefs[0].b=100-statDefs[0].a;
-  hist.push({m:minute,a:pA,b:pB});
-  setScore(); renderPred(); renderStats(); drawTrend();
-}
-
 let cachedLambdas=null, cachedFixture=null, lastPredAt=0, lastScoreKey='', domA=1, domB=1;
 function domAdj(){
   if(!statDefs || statDefs.length<4) return {a:1,b:1};
@@ -1462,18 +1481,30 @@ function domAdj(){
   const presB=0.30*possB + 0.40*(1-sotS) + 0.30*(1-xgS);
   return { a:clamp(0.5+presA,0.55,1.5), b:clamp(0.5+presB,0.55,1.5) };
 }
-function clearLiveBoard(){
+function clearLiveBoard(mode){
+  const msg = mode==='demo'  ? '演示模式 · 暂无真实比赛（接入实时后自动显示）'
+            : mode==='error' ? '实时数据暂时获取失败 · 请稍后重试'
+            :                  '暂无进行中的比赛 · 开赛后自动显示实时比分与胜率';
   document.getElementById('tnameA').textContent='—'; document.getElementById('tnameB').textContent='—';
-  document.getElementById('flagA').textContent='⚽'; document.getElementById('flagB').textContent='⚽';
+  document.getElementById('flagA').innerHTML='⚽'; document.getElementById('flagB').innerHTML='⚽';
   document.getElementById('sA').textContent='–'; document.getElementById('sB').textContent='–';
-  document.getElementById('clk').textContent='暂无进行中的比赛 · 请查看「赛程」与「赛前对阵」';
+  document.getElementById('clk').textContent=msg;
   document.getElementById('mA').style.width='0%'; document.getElementById('mD').style.width='100%'; document.getElementById('mB').style.width='0%';
+  const lp=document.querySelector('#v-live .livepill'); if(lp) lp.style.display='none';
+  const comp=document.querySelector('#v-live .comp span:first-child'); if(comp) comp.textContent='2026 世界杯';
+  document.getElementById('stats').innerHTML='<div style="color:var(--faint);padding:10px 2px;font-size:13px">暂无实时数据</div>';
+  ['tA','tD','tB'].forEach((id,k)=>{const e=document.getElementById(id); e.textContent='—'; e.style.flexBasis=(k===1?34:33)+'%';});
+  document.getElementById('labA').textContent='主队 胜'; document.getElementById('labB').textContent='客队 胜';
+  document.getElementById('topScores').innerHTML='';
+  hist.length=0; try{ drawTrend(); }catch(_){}
 }
 async function liveTick(){
   try{
     const res=await api(`/fixtures?live=all&league=${CONFIG.LEAGUE_ID}&season=${CONFIG.SEASON}`);
-    if(!res||!res.length){ clearLiveBoard(); return; }
+    if(!res||!res.length){ clearLiveBoard('none'); return; }
     const fx=res[0];
+    const lp=document.querySelector('#v-live .livepill'); if(lp) lp.style.display='';
+    const comp=document.querySelector('#v-live .comp span:first-child'); if(comp) comp.textContent='2026 世界杯 · '+(roundCN(fx.league&&fx.league.round)||'');
     sA=fx.goals.home||0; sB=fx.goals.away||0; minute=fx.fixture.status.elapsed||0;
     document.getElementById('tnameA').textContent=fx.teams.home.name;
     document.getElementById('tnameB').textContent=fx.teams.away.name;
@@ -1497,12 +1528,12 @@ async function liveTick(){
     setScore(); renderPred(); renderStats(); drawTrend();
   }catch(e){
     if(/QUOTA/.test(e.message)){ showQuotaExhausted(); }
-    else { console.warn('实时数据获取失败，本次回退演示模式：',e); mockTick(); }
+    else { console.warn('实时数据获取失败：',e); clearLiveBoard('error'); }
   }
 }
 
 function tick(){
-  if(!LIVE){ mockTick(); return; }
+  if(!LIVE) return;   // 演示模式不轮询（启动时已显示空状态）
   if(!document.getElementById('v-live').classList.contains('on')) return;  // 只在查看实况时轮询
   liveTick();
 }
@@ -1513,8 +1544,8 @@ function tick(){
   else { tag.textContent='演示模式'; }
   renderQuota();
 })();
-setInterval(tick, LIVE ? CONFIG.POLL_MS : 2500);
-if(LIVE) tick();
+if(LIVE){ clearLiveBoard('none'); tick(); setInterval(tick, CONFIG.POLL_MS); }
+else { clearLiveBoard('demo'); }
 </script>
 </body>
 </html>

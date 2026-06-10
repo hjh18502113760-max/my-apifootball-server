@@ -32,10 +32,19 @@ const WARM_MS    = parseInt(process.env.WARM_MS || '30000', 10);
 const ARK_API_KEY  = process.env.ARK_API_KEY || '';
 const ARK_MODEL    = process.env.ARK_MODEL || 'doubao-seed-2-0-lite-260428';
 const ARK_BASE     = process.env.ARK_BASE || 'https://ark.cn-beijing.volces.com/api/v3';
-const AI_DAILY_CAP = parseInt(process.env.AI_DAILY_CAP || '2000', 10);   // AI 每日调用上限
+const AI_DAILY_CAP = parseInt(process.env.AI_DAILY_CAP || '8000', 10);   // AI 每日调用上限
 const AI_MAX_TOKENS= parseInt(process.env.AI_MAX_TOKENS || '500', 10);   // 单条回复 token 上限
 const AI_HOURLY    = parseInt(process.env.AI_HOURLY_PER_IP || '150', 10);// 每 IP 每小时上限
-const AI_SYSTEM = '你是「世界杯胜率预测」App 内的 AI 助手（基于豆包）。用简体中文、简洁口语化地回答用户关于 2026 世界杯、足球规则与术语（如 xG、越位、点球、Dixon-Coles 模型）、赛制、参赛球队等问题。回答尽量控制在 5 句话内，必要时用简短分点。不要编造确定的比分或结果；遇到“实时比分/具体赛程/某队最新阵容”这类问题，可简要回答并提示用户查看 App 内对应页面（实况 / 赛程 / 球队）。';
+const AI_MAX_UNITS = parseInt(process.env.AI_MAX_UNITS || '300', 10);    // 单条输入上限（中文字/英文单词混合，英文单词计 1，含标点）
+function countUnits(s){ const m = String(s || '').match(/[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff\u3000-\u303f\uff00-\uffef]|[A-Za-z0-9]+(?:['\u2019\-_][A-Za-z0-9]+)*|[^\s]/g); return m ? m.length : 0; }
+const AI_SYSTEM = [
+  '你是「2026世界杯胜率预测」网页里的 AI 助手豆包，一个纯文字大语言模型。请严格遵守：',
+  '1) 只回答与足球、2026 世界杯、足球规则与术语（如 xG、越位、点球、Dixon-Coles 模型）、赛制、参赛球队、以及本网页功能相关的问题；与此无关的问题，礼貌说明你只负责世界杯看球答疑，不作答。',
+  '2) 你只能进行文字问答：不能生成图片/视频/音频，不能上传、读取或分析文件与截图。被要求这类功能时，直接如实说“我只能进行文字交流，无法生成图片/视频或处理文件”，不要提供任何替代的生成或绘图方案。',
+  '3) 绝对不要编造本网页不存在的功能、栏目或入口（不存在“传奇球星专区”“影像库”等）。本网页只有：赛程、实况、球队、赛前对阵预测、问豆包。涉及实时比分/赛程/阵容时，提示用户去对应页面（实况/赛程/球队）查看，不要凭空描述其中内容。',
+  '4) 不知道或做不到就直接说明，不要猜测、不要夸大、不要给出不存在的链接、资源或操作建议。',
+  '5) 用简体中文、简洁口语化，一般控制在 5 句话以内。'
+].join('\n');
 
 if (!API_KEY) console.warn('⚠ 未设置环境变量 API_KEY，将无法调用官方 API');
 
@@ -185,23 +194,48 @@ const server = http.createServer(async (req, res) => {
       let body = {}; try { body = JSON.parse(raw || '{}'); } catch (_) {}
       let msgs = Array.isArray(body.messages) ? body.messages : [];
       msgs = msgs.filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
-                 .slice(-8).map(m => ({ role: m.role, content: String(m.content).slice(0, 2000) }));
+                 .slice(-8).map(m => ({ role: m.role, content: String(m.content).slice(0, 4000) }));
       if (!msgs.length) { res.writeHead(200, CORS); return res.end(JSON.stringify({ error: '消息为空' })); }
-      const payload = { model: ARK_MODEL, messages: [{ role: 'system', content: AI_SYSTEM }, ...msgs], max_tokens: AI_MAX_TOKENS, temperature: 0.7 };
+      const lastUser = [...msgs].reverse().find(m => m.role === 'user');
+      if (lastUser && countUnits(lastUser.content) > AI_MAX_UNITS) {
+        res.writeHead(200, CORS);
+        return res.end(JSON.stringify({ error: '问题太长啦，请精简到 ' + AI_MAX_UNITS + ' 字以内（中英文合计，英文单词按 1 计）。' }));
+      }
+      const payload = { model: ARK_MODEL, messages: [{ role: 'system', content: AI_SYSTEM }, ...msgs], max_tokens: AI_MAX_TOKENS, temperature: 0.7, stream: true };
       const r = await fetch(ARK_BASE + '/chat/completions', {
         method: 'POST',
         headers: { 'Authorization': 'Bearer ' + ARK_API_KEY, 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      const txt = await r.text();
-      if (!r.ok) { res.writeHead(200, CORS); return res.end(JSON.stringify({ error: 'AI 服务暂时不可用（' + r.status + '），请稍后再试' })); }
+      if (!r.ok || !r.body) { res.writeHead(200, CORS); return res.end(JSON.stringify({ error: 'AI 服务暂时不可用（' + r.status + '），请稍后再试' })); }
       aiUsage.count++;
-      let reply = '';
-      try { const j = JSON.parse(txt); reply = (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || ''; } catch (_) {}
-      res.writeHead(200, CORS);
-      return res.end(JSON.stringify({ reply: reply || '（这次没有返回内容，换个问法再试试～）' }));
+      // 以 SSE 把豆包的流式增量转发给前端
+      res.writeHead(200, Object.assign({}, CORS, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', 'Connection': 'keep-alive', 'X-Accel-Buffering': 'no' }));
+      const reader = r.body.getReader(); const dec = new TextDecoder(); let sbuf = '', any = false;
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          sbuf += dec.decode(value, { stream: true });
+          let nl;
+          while ((nl = sbuf.indexOf('\n')) >= 0) {
+            const line = sbuf.slice(0, nl).trim(); sbuf = sbuf.slice(nl + 1);
+            if (!line.startsWith('data:')) continue;
+            const data = line.slice(5).trim();
+            if (data === '[DONE]') continue;
+            try {
+              const j = JSON.parse(data);
+              const delta = j.choices && j.choices[0] && j.choices[0].delta && j.choices[0].delta.content;
+              if (delta) { any = true; res.write('data: ' + JSON.stringify({ t: delta }) + '\n\n'); }
+            } catch (_) {}
+          }
+        }
+      } catch (_) {}
+      if (!any) res.write('data: ' + JSON.stringify({ t: '（这次没有返回内容，换个问法再试试～）' }) + '\n\n');
+      res.write('data: [DONE]\n\n');
+      return res.end();
     } catch (e) {
-      res.writeHead(200, CORS);
+      try { res.writeHead(200, CORS); } catch (_) {}
       return res.end(JSON.stringify({ error: 'AI 请求失败，请稍后重试' }));
     }
   }

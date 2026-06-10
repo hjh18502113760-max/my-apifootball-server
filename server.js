@@ -22,7 +22,7 @@ const { URL } = require('url');
 const API_KEY   = process.env.API_KEY || '';
 const UPSTREAM   = process.env.UPSTREAM || 'https://v3.football.api-sports.io';
 const PORT       = parseInt(process.env.PORT || '8787', 10);
-const DAILY_CAP  = parseInt(process.env.DAILY_CAP || '70000', 10);  // 付费档默认上限（可用环境变量覆盖）
+const DAILY_CAP  = parseInt(process.env.DAILY_CAP || '75000', 10);  // 付费档默认上限（可用环境变量覆盖）
 const LEAGUE_ID  = process.env.LEAGUE_ID || '1';
 const SEASON     = process.env.SEASON || '2026';
 const WARM       = (process.env.WARM || 'off') === 'on';
@@ -80,8 +80,18 @@ let usage = { day: today(), count: 0 };
 function rollover() { if (usage.day !== today()) usage = { day: today(), count: 0 }; }
 
 /* ---------- AI 用量：每日总量 + 每 IP 每小时限流 ---------- */
-let aiUsage = { day: today(), count: 0 };
-function aiRollover() { if (aiUsage.day !== today()) aiUsage = { day: today(), count: 0 }; }
+let aiUsage = { day: today(), count: 0, tokens: { prompt: 0, completion: 0, total: 0 } };
+function aiRollover() { if (aiUsage.day !== today()) aiUsage = { day: today(), count: 0, tokens: { prompt: 0, completion: 0, total: 0 } }; }
+
+// 在线人数探测：客户端定时心跳，统计最近 PRESENCE_TTL 内活跃的访客
+const presence = new Map();                 // id -> 最近活跃时间(ms)
+const PRESENCE_TTL = 45000;
+function presenceTouch(id) {
+  const now = Date.now();
+  if (id) presence.set(String(id).slice(0, 64), now);
+  for (const [k, t] of presence) { if (now - t > PRESENCE_TTL) presence.delete(k); }
+  return presence.size;
+}
 const aiIpHits = new Map();              // ip -> { hour, count }
 function aiIpAllowed(ip) {
   const h = Math.floor(Date.now() / 3600e3);
@@ -156,6 +166,12 @@ const server = http.createServer(async (req, res) => {
 
   if (u.pathname === '/healthz') { res.writeHead(200, CORS); return res.end('ok'); }
 
+  if (u.pathname === '/presence') {            // 在线人数心跳：注册并返回当前在线数
+    const online = presenceTouch((u.searchParams && u.searchParams.get('id')) || '');
+    res.writeHead(200, CORS);
+    return res.end(JSON.stringify({ online }));
+  }
+
   // PWA manifest（让"添加到主屏幕"用上图标/名称/独立全屏）
   if (u.pathname === '/manifest.webmanifest' || u.pathname === '/manifest.json') {
     res.writeHead(200, { 'Content-Type': 'application/manifest+json; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
@@ -201,7 +217,7 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(200, CORS);
         return res.end(JSON.stringify({ error: '问题太长啦，请精简到 ' + AI_MAX_UNITS + ' 字以内（中英文合计，英文单词按 1 计）。' }));
       }
-      const payload = { model: ARK_MODEL, messages: [{ role: 'system', content: AI_SYSTEM }, ...msgs], max_tokens: AI_MAX_TOKENS, temperature: 0.7, stream: true };
+      const payload = { model: ARK_MODEL, messages: [{ role: 'system', content: AI_SYSTEM }, ...msgs], max_tokens: AI_MAX_TOKENS, temperature: 0.7, stream: true, stream_options: { include_usage: true } };
       const r = await fetch(ARK_BASE + '/chat/completions', {
         method: 'POST',
         headers: { 'Authorization': 'Bearer ' + ARK_API_KEY, 'Content-Type': 'application/json' },
@@ -227,6 +243,11 @@ const server = http.createServer(async (req, res) => {
               const j = JSON.parse(data);
               const delta = j.choices && j.choices[0] && j.choices[0].delta && j.choices[0].delta.content;
               if (delta) { any = true; res.write('data: ' + JSON.stringify({ t: delta }) + '\n\n'); }
+              if (j.usage) {   // 流式末尾的用量块（include_usage）
+                aiUsage.tokens.prompt += j.usage.prompt_tokens || 0;
+                aiUsage.tokens.completion += j.usage.completion_tokens || 0;
+                aiUsage.tokens.total += j.usage.total_tokens || ((j.usage.prompt_tokens || 0) + (j.usage.completion_tokens || 0));
+              }
             } catch (_) {}
           }
         }
@@ -246,7 +267,8 @@ const server = http.createServer(async (req, res) => {
     return res.end(JSON.stringify({
       day: usage.day, used: usage.count, cap: DAILY_CAP,
       left: Math.max(0, DAILY_CAP - usage.count), cached: cache.size,
-      ai: { used: aiUsage.count, cap: AI_DAILY_CAP, left: Math.max(0, AI_DAILY_CAP - aiUsage.count), configured: !!ARK_API_KEY }
+      online: presenceTouch(''),
+      ai: { used: aiUsage.count, cap: AI_DAILY_CAP, left: Math.max(0, AI_DAILY_CAP - aiUsage.count), configured: !!ARK_API_KEY, tokens: aiUsage.tokens }
     }));
   }
 

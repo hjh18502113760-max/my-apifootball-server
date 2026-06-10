@@ -837,7 +837,6 @@ async function showTeamLive(idx){
   try{ const r=await fetchTeamCore(lt.apiId); teams[8].mlog=r.mlog; teams[8].cards=r.cards; showTeam(8); }
   catch(e){ document.getElementById('tdLog').innerHTML='<div style="color:var(--faint);padding:14px">暂未获取到赛事数据</div>'; }
 }
-if(LIVE){ renderTeamsLive(); }
 document.getElementById('tdBack').onclick=()=>show('teams');
 
 /* ===================== 实时数据 + 预测模型 ===================== */
@@ -845,9 +844,9 @@ document.getElementById('tdBack').onclick=()=>show('teams');
 const CONFIG = {
   USE_LIVE: true,                   // 已开启实时；由服务器托管时自动用当前域名取数（无需填 SERVER_BASE/API_KEY）
   SERVER_BASE: '',                  // ★分发推荐：填你的代理地址(如 https://xxx.onrender.com)；填了就走代理，客户端不需要 key
-  API_KEY:  '1e8ba1169cb9b6b06a97199ca9445980',                     // 仅"直连官方"(单人测试)时需要；走代理时留空
+  API_KEY:  '',                     // 仅"直连官方"(单人测试)时需要；走代理时留空
   API_BASE: 'https://v3.football.api-sports.io',
-  POLL_MS:  15000,                  // 实时刷新间隔（毫秒）
+  POLL_MS:  30000,                  // 实时刷新间隔（毫秒）
   PRED_MS:  300000,                 // 实时预测重算间隔：5 分钟（进球时也会立即重算）
   LEAGUE_ID: 1,                     // 1 = FIFA World Cup
   SEASON:   2026,
@@ -861,6 +860,7 @@ const autoBase = (typeof location!=='undefined' && /^https?:$/.test(location.pro
 const SERVER_BASE = (CONFIG.SERVER_BASE && CONFIG.SERVER_BASE.length) ? CONFIG.SERVER_BASE : (CONFIG.API_KEY.length ? '' : autoBase);
 const USE_SERVER = CONFIG.USE_LIVE && SERVER_BASE.length > 0 && CONFIG.API_KEY.length === 0;   // 走共享代理(含自动同源)
 const LIVE = CONFIG.USE_LIVE && (USE_SERVER || CONFIG.API_KEY.length > 0);                      // 实时(代理或直连)
+try{ console.log('[胜率预测] BUILD=2026-06-r4 | USE_LIVE='+CONFIG.USE_LIVE+' | origin='+(typeof location!=='undefined'?location.origin:'-')+' | SERVER_BASE='+SERVER_BASE+' | USE_SERVER='+USE_SERVER+' | LIVE='+LIVE); }catch(_){}
 let liveScoreList = null;           // 实时模型算出的比分榜，供 topScores 使用
 
 /* —— 泊松 / Dixon-Coles 简化预测引擎（与第二轮讨论的模型一致）—— */
@@ -1342,6 +1342,7 @@ async function renderScheduleLive(){
   }catch(e){ console.warn('实时赛程获取失败，保留演示赛程：',e); }
 }
 if(LIVE){ renderScheduleLive(); }
+if(LIVE){ renderTeamsLive(); }
 
 /* ===================== ② 预测校准框架（随真实结果逐步生效）===================== */
 const Calibrator=(function(){

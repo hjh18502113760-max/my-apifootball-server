@@ -348,6 +348,10 @@ canvas{width:100%; height:128px; display:block}
 .strow .rk{text-align:center; color:var(--muted)}
 .strow .nm{display:flex; align-items:center; gap:6px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis}
 .strow .nm img{width:18px;height:18px;border-radius:3px;object-fit:cover;flex:none}
+.strow .nmcol{display:flex; flex-direction:column; min-width:0; overflow:hidden}
+.strow .nmname{display:flex; align-items:center; gap:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.strow .nmprob{font-size:10px; color:var(--faint); margin-top:1px; line-height:1.2}
+.strow .nmprob.dim{opacity:.65; font-style:italic}
 .strow .c{text-align:center; color:var(--muted)}
 .strow .pt{text-align:center; font-weight:700; color:var(--txt)}
 .strow.q1{background:linear-gradient(90deg,rgba(198,255,68,.10),transparent)}
@@ -360,6 +364,24 @@ canvas{width:100%; height:128px; display:block}
 .scrow .nm{display:flex;align-items:center;gap:7px;overflow:hidden;white-space:nowrap}
 .scrow .nm small{color:var(--faint);font-size:11px}
 .st-empty{color:var(--faint); font-size:13px; text-align:center; padding:30px 10px; line-height:1.7}
+/* ---- 24小时开赛倒计时 ---- */
+.pill.cd{background:rgba(77,168,255,.14); color:var(--b); border:1px solid rgba(77,168,255,.4); font-variant-numeric:tabular-nums; white-space:nowrap}
+.pill.cd.cd-soon{background:rgba(255,178,62,.16); color:var(--warn); border-color:rgba(255,178,62,.5)}
+.pill.cd.cd-now{background:rgba(255,77,77,.18); color:var(--live); border-color:rgba(255,77,77,.55); animation:cdpulse 1s infinite}
+@keyframes cdpulse{0%,100%{opacity:1}50%{opacity:.5}}
+.up24{margin:2px 0 14px}
+.up24 .u-h{font-family:var(--ui); font-size:13px; letter-spacing:.04em; color:var(--muted); margin:0 0 8px; display:flex; align-items:center; gap:7px}
+.up24 .u-h .dotb{width:7px;height:7px;border-radius:50%;background:var(--b);box-shadow:0 0 8px var(--b)}
+.ucard{display:flex; align-items:center; gap:10px; background:var(--surface); border:1px solid rgba(255,255,255,.08); border-radius:14px; padding:11px 13px; margin-bottom:9px; cursor:pointer}
+.ucard .uteams{flex:1; min-width:0}
+.ucard .urow{display:flex; align-items:center; gap:7px; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding:2px 0}
+.ucard .urow img{width:20px;height:20px;border-radius:4px;object-fit:cover;flex:none}
+.ucard .uvs{font-size:10px;color:var(--faint);margin:1px 0}
+.ucard .uright{text-align:right; flex:none}
+.ucard .utime{font-size:11px;color:var(--faint);margin-bottom:5px}
+.ucard .ucd{display:inline-block; font-size:13px; font-weight:700; font-variant-numeric:tabular-nums; color:var(--b); background:rgba(77,168,255,.12); border:1px solid rgba(77,168,255,.4); border-radius:8px; padding:3px 9px; white-space:nowrap}
+.ucard .ucd.cd-soon{color:var(--warn); background:rgba(255,178,62,.14); border-color:rgba(255,178,62,.5)}
+.ucard .ucd.cd-now{color:var(--live); background:rgba(255,77,77,.16); border-color:rgba(255,77,77,.55); animation:cdpulse 1s infinite}
 </style>
 </head>
 <body>
@@ -385,6 +407,8 @@ canvas{width:100%; height:128px; display:block}
             <span class="sb-wx" id="sbWx">竞猜交流 + 微信 <b>HJH_ZSH_ZQ</b>（点击复制）</span>
             <span class="sb-online" id="sbOnline"><i class="sb-dot"></i>在线 <b id="sbOnlineN">—</b> 人</span>
           </div>
+
+          <div id="upcoming24" class="up24"></div>
 
           <div class="board">
             <div class="comp">
@@ -427,7 +451,7 @@ canvas{width:100%; height:128px; display:block}
             <canvas id="trend"></canvas>
           </div>
 
-          <div class="foot-note">每 <b>10 秒</b> 及每个关键事件后自动刷新 · 数据基于 Dixon-Coles 模型</div>
+          <div class="foot-note">每 <b>10 秒</b> 及每个关键事件后自动刷新 · 数据基于泊松进球模型</div>
         </section>
 
         <!-- ============ 赛程 SCHEDULE ============ -->
@@ -664,7 +688,7 @@ canvas{width:100%; height:128px; display:block}
             <button>什么是 xG？</button>
             <button>越位是怎么判的？</button>
             <button>本届世界杯赛制是怎样的？</button>
-            <button>什么是 Dixon-Coles 模型？</button>
+            <button>本站的胜率/出线概率是怎么算的？</button>
           </div>
         </div>
         <div class="ai-input">
@@ -688,7 +712,7 @@ function show(v){
   hideAllViews();
   tabs.forEach(t=>t.classList.toggle('on',t.dataset.v===v));
   document.getElementById(views[v]).classList.add('on');
-  if(v==='live') requestAnimationFrame(drawTrend);
+  if(v==='live'){ requestAnimationFrame(drawTrend); if(typeof renderUpcoming24==='function') renderUpcoming24(); }
   if(v==='standings') renderStandings();
 }
 tabs.forEach(t=>t.onclick=()=>show(t.dataset.v));
@@ -984,7 +1008,7 @@ const autoBase = (typeof location!=='undefined' && /^https?:$/.test(location.pro
 const SERVER_BASE = (CONFIG.SERVER_BASE && CONFIG.SERVER_BASE.length) ? CONFIG.SERVER_BASE : (CONFIG.API_KEY.length ? '' : autoBase);
 const USE_SERVER = CONFIG.USE_LIVE && SERVER_BASE.length > 0 && CONFIG.API_KEY.length === 0;   // 走共享代理(含自动同源)
 const LIVE = CONFIG.USE_LIVE && (USE_SERVER || CONFIG.API_KEY.length > 0);                      // 实时(代理或直连)
-try{ console.log('[胜率预测] BUILD=2026-06-r6 | USE_LIVE='+CONFIG.USE_LIVE+' | origin='+(typeof location!=='undefined'?location.origin:'-')+' | SERVER_BASE='+SERVER_BASE+' | USE_SERVER='+USE_SERVER+' | LIVE='+LIVE); }catch(_){}
+try{ console.log('[胜率预测] BUILD=2026-06-r7 | USE_LIVE='+CONFIG.USE_LIVE+' | origin='+(typeof location!=='undefined'?location.origin:'-')+' | SERVER_BASE='+SERVER_BASE+' | USE_SERVER='+USE_SERVER+' | LIVE='+LIVE); }catch(_){}
 let liveScoreList = null;           // 实时模型算出的比分榜，供 topScores 使用
 
 /* —— 泊松 / Dixon-Coles 简化预测引擎（与第二轮讨论的模型一致）—— */
@@ -1608,7 +1632,7 @@ function renderStandings(){
     return;
   }
   body.innerHTML='<div class="st-empty">加载中…</div>';
-  if(stCache){ stPaint(); } else { stLoadLive(); }
+  if(stCache){ stPaint(); ensureQualProb(); } else { stLoadLive(); }
 }
 async function stLoadLive(){
   try{
@@ -1627,6 +1651,7 @@ async function stLoadLive(){
     }
     stCache={groups, scorers:scorers||[]};
     stPaint();
+    ensureQualProb();
   }catch(e){
     document.getElementById('stBody').innerHTML='<div class="st-empty">积分数据暂未获取到<br><span style="font-size:11px">开赛后会逐步更新</span></div>';
   }
@@ -1664,9 +1689,9 @@ function stPaint(){
   const allDone=groups.every(g=>g.every(t=>t.p>=3));   // 所有小组赛全部踢完
   let html=tabs;
   if(!anyPlayed){
-    html+=`<div class="st-note">本届世界杯<b style="color:var(--warn)">尚未开赛</b>，出线状态暂不显示；开赛后将根据每场真实赛况（积分 / 净胜球 / 进球）实时计算并更新。下方仅为分组与排名占位。</div>`;
+    html+=`<div class="st-note">本届世界杯<b style="color:var(--warn)">尚未开赛</b>，出线状态暂不显示；开赛后将根据每场真实赛况（积分 / 净胜球 / 进球）实时计算并更新。<br>「本站测算出线 X%」为本站预测模型对全部小组赛<b>蒙特卡洛推演 5000 次</b>得到的赛前预测，仅供参考、非官方结论。</div>`;
   } else {
-    html+=`<div class="st-note">出线规则：每组<b style="color:var(--a)">前 2 名直接出线</b>，外加各组<b style="color:var(--warn)">第 3 名中最好的 8 队</b>（按 积分→净胜球→进球数）。小组未踢完前均标<b>暂列</b>，全部结束才确定；官方极端同分时还比球队行为分/FIFA排名，本表按主排序近似。</div>`;
+    html+=`<div class="st-note">出线规则：每组<b style="color:var(--a)">前 2 名直接出线</b>，外加各组<b style="color:var(--warn)">第 3 名中最好的 8 队</b>（按 积分→净胜球→进球数）。小组未踢完前均标<b>暂列</b>，全部结束才确定；官方极端同分时还比球队行为分/FIFA排名，本表按主排序近似。<br>「本站测算出线 X%」为本站预测模型对剩余比赛<b>蒙特卡洛推演 5000 次</b>的估计（每轮结合已赛结果更新），仅供参考、非官方结论。</div>`;
   }
   groups.forEach((g,gi)=>{
     const gStarted=g.some(t=>t.p>0), gDone=g.every(t=>t.p>=3);
@@ -1683,7 +1708,15 @@ function stPaint(){
             : (qualifiedIds.has(t.id) ? '<span class="qbadge qb-out">暂列出线</span>' : '<span class="qbadge qb-mid">暂列第三</span>'); }
         else { badge = gDone ? '<span class="qbadge qb-elim">淘汰</span>' : '<span class="qbadge qb-elim">暂列末位</span>'; }
       }
-      html+=`<div class="strow ${cls}"><span class="rk">${t.rank}</span><span class="nm">${t.logo?`<img src="${t.logo}">`:''}<span style="overflow:hidden;text-overflow:ellipsis">${t.name}</span>${badge}</span><span class="c">${t.p}</span><span class="c">${t.w}</span><span class="c">${t.d}</span><span class="c">${t.l}</span><span class="c">${t.gd>0?'+':''}${t.gd}</span><span class="pt">${t.pts}</span></div>`;
+      let probLine='';
+      if(qualProb && qualProb[t.id]!=null){
+        const p=Math.round(qualProb[t.id]);
+        const col = p>=60?'var(--a)' : p>=25?'var(--txt)' : 'var(--faint)';
+        probLine=`<span class="nmprob" style="color:${col}">本站测算出线 ${p}%</span>`;
+      } else if(qualBusy){
+        probLine='<span class="nmprob dim">出线概率测算中…</span>';
+      }
+      html+=`<div class="strow ${cls}"><span class="rk">${t.rank}</span><span class="nm">${t.logo?`<img src="${t.logo}">`:''}<span class="nmcol"><span class="nmname">${t.name}${badge}</span>${probLine}</span></span><span class="c">${t.p}</span><span class="c">${t.w}</span><span class="c">${t.d}</span><span class="c">${t.l}</span><span class="c">${t.gd>0?'+':''}${t.gd}</span><span class="pt">${t.pts}</span></div>`;
     });
     html+='</div>';
   });
@@ -1703,6 +1736,128 @@ function stPaint(){
 }
 function stSwitch(t){ stTab=t; stPaint(); }
 
+/* ===== 24小时开赛倒计时 ===== */
+const Countdown=(function(){
+  let items=[], timer=null;
+  function fmt(ms){ const s=Math.max(0,Math.floor(ms/1000)),h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60,p=n=>String(n).padStart(2,'0'); return p(h)+':'+p(m)+':'+p(x); }
+  function tick(){
+    const now=Date.now();
+    items=items.filter(it=>it.el && it.el.isConnected);     // 自动清理已移除节点
+    items.forEach(it=>{
+      const left=it.target-now;
+      if(left<=0){ it.el.textContent='即将开始'; it.el.classList.remove('cd-soon'); it.el.classList.add('cd-now'); return; }
+      it.el.textContent='距开赛 '+fmt(left);
+      it.el.classList.toggle('cd-soon', left<=600000);       // 10分钟内强调
+    });
+    if(!items.length && timer){ clearInterval(timer); timer=null; }
+  }
+  function add(el,target){ if(!el) return; items.push({el,target}); if(!timer) timer=setInterval(tick,1000); tick(); }
+  return {add};
+})();
+function wireCountdowns(root){
+  (root||document).querySelectorAll('[data-cd]:not([data-cdon])').forEach(el=>{
+    el.setAttribute('data-cdon','1');
+    Countdown.add(el, parseInt(el.getAttribute('data-cd'),10));
+  });
+}
+let _up24={t:0,data:null};
+async function renderUpcoming24(){
+  const box=document.getElementById('upcoming24'); if(!box) return;
+  if(!LIVE){ box.innerHTML=''; return; }
+  let fxs=null;
+  if(_up24.data && Date.now()-_up24.t<60000) fxs=_up24.data;
+  else { try{ fxs=await api(`/fixtures?league=${CONFIG.LEAGUE_ID}&season=${CONFIG.SEASON}`); _up24={t:Date.now(),data:fxs}; }catch(e){ return; } }
+  const now=Date.now();
+  const soon=(fxs||[]).filter(f=>{ const left=new Date(f.fixture.date).getTime()-now; return f.fixture.status.short==='NS'&&left>0&&left<=86400000; })
+    .sort((a,b)=>new Date(a.fixture.date)-new Date(b.fixture.date));
+  if(!soon.length){ box.innerHTML=''; return; }
+  const img=l=>l?`<img src="${l}">`:'';
+  let html='<div class="u-h"><i class="dotb"></i>即将开赛 · 24 小时内（'+soon.length+' 场）</div>';
+  soon.forEach(f=>{
+    const kMs=new Date(f.fixture.date).getTime();
+    const t=new Date(f.fixture.date).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false});
+    html+=`<div class="ucard" onclick="openMatchupLive(${f.fixture.id})">
+      <div class="uteams">
+        <div class="urow">${img(f.teams.home.logo)}<span style="overflow:hidden;text-overflow:ellipsis">${f.teams.home.name}</span></div>
+        <div class="uvs">vs</div>
+        <div class="urow">${img(f.teams.away.logo)}<span style="overflow:hidden;text-overflow:ellipsis">${f.teams.away.name}</span></div>
+      </div>
+      <div class="uright"><div class="utime">${t}</div><span class="ucd" data-cd="${kMs}">距开赛 --:--:--</span></div>
+    </div>`;
+  });
+  box.innerHTML=html;
+  wireCountdowns(box);
+}
+
+/* ===== 出线概率：蒙特卡洛推演（用本站预测模型模拟小组赛剩余比赛 5000 次）===== */
+let qualProb=null, qualSig='', qualBusy=false;
+function resultsSig(groups){ let s=''; groups.forEach(g=>g.forEach(t=>{ s+=t.id+':'+t.pts+','+t.gd+','+t.gf+';'; })); return s; }
+// 由双方实力({att,def})构造比分概率的累积分布（中立场，无主场加成）
+function buildCum(bH,bA){
+  const g=CONFIG.MAX_GOALS;
+  const lH=Math.max(0.2, CONFIG.LEAGUE_AVG*bH.att/Math.max(0.3,bA.def));
+  const lA=Math.max(0.2, CONFIG.LEAGUE_AVG*bA.att/Math.max(0.3,bH.def));
+  const gh=[],ga=[],cc=[]; let sum=0;
+  for(let h=0;h<=g;h++){ const ph=pois(h,lH); for(let a=0;a<=g;a++){ const p=ph*pois(a,lA); sum+=p; gh.push(h); ga.push(a); cc.push(sum); } }
+  for(let i=0;i<cc.length;i++) cc[i]/=sum; cc[cc.length-1]=1;
+  return {gh,ga,cc};
+}
+async function computeQualification(groups){
+  const ids=[], nameOf={}, gOf={};
+  groups.forEach((g,gi)=>g.forEach(t=>{ ids.push(t.id); nameOf[t.id]=t.name; gOf[t.id]=gi; }));
+  const uniq=[...new Set(ids)];
+  const strs=await Promise.all(uniq.map(id=>coreStrength(id, nameOf[id]).catch(()=>({att:1,def:1}))));
+  const S={}; uniq.forEach((id,i)=>S[id]=strs[i]);
+  const fxs=await api(`/fixtures?league=${CONFIG.LEAGUE_ID}&season=${CONFIG.SEASON}`).catch(()=>null);
+  const DONE=['FT','AET','PEN'];
+  const base=groups.map(g=>g.map(t=>({id:t.id,pts:t.pts,gd:t.gd,gf:t.gf})));
+  const idx=groups.map(g=>g.map(t=>t.id));
+  const unplayed=[];
+  (fxs||[]).forEach(f=>{
+    if(!/group/i.test((f.league&&f.league.round)||'')) return;
+    if(DONE.includes(f.fixture.status.short)) return;
+    const h=f.teams.home.id, a=f.teams.away.id, gi=gOf[h];
+    if(gi==null || gOf[a]!==gi) return;
+    unplayed.push({gi,h,a,cum:buildCum(S[h]||{att:1,def:1}, S[a]||{att:1,def:1})});
+  });
+  const anyPlayed=groups.some(g=>g.some(t=>t.pts>0||t.gf>0));
+  if(!unplayed.length && !anyPlayed) return null;     // 没有可推演的信息
+  const N=5000, count={}; uniq.forEach(id=>count[id]=0);
+  for(let it=0; it<N; it++){
+    const T={}; for(let gi=0;gi<base.length;gi++) for(let k=0;k<base[gi].length;k++){ const t=base[gi][k]; T[t.id]={id:t.id,pts:t.pts,gd:t.gd,gf:t.gf}; }
+    for(let u=0;u<unplayed.length;u++){
+      const {h,a,cum}=unplayed[u], r=Math.random(), cc=cum.cc;
+      let lo=0,hi=cc.length-1; while(lo<hi){ const m=(lo+hi)>>1; if(cc[m]<r) lo=m+1; else hi=m; }
+      const sh=cum.gh[lo], sa=cum.ga[lo], th=T[h], ta=T[a];
+      th.gf+=sh; ta.gf+=sa; th.gd+=(sh-sa); ta.gd+=(sa-sh);
+      if(sh>sa) th.pts+=3; else if(sh<sa) ta.pts+=3; else { th.pts++; ta.pts++; }
+    }
+    const thirds=[];
+    for(let gi=0; gi<idx.length; gi++){
+      const arr=idx[gi].map(id=>T[id]);
+      arr.sort((x,y)=> y.pts-x.pts || y.gd-x.gd || y.gf-x.gf || (Math.random()-0.5));
+      if(arr[0]) count[arr[0].id]++;
+      if(arr[1]) count[arr[1].id]++;
+      if(arr[2]) thirds.push(arr[2]);
+    }
+    thirds.sort((x,y)=> y.pts-x.pts || y.gd-x.gd || y.gf-x.gf || (Math.random()-0.5));
+    for(let k=0;k<8 && k<thirds.length;k++) count[thirds[k].id]++;
+  }
+  const prob={}; uniq.forEach(id=>prob[id]=count[id]/N*100);
+  return prob;
+}
+async function ensureQualProb(){
+  if(!LIVE || !stCache || !stCache.groups || !stCache.groups.length) return;
+  const sig=resultsSig(stCache.groups);
+  if(qualProb && qualSig===sig) return;     // 已最新
+  if(qualBusy) return;
+  qualBusy=true; if(stTab==='groups') stPaint();   // 显示"测算中"
+  await new Promise(r=>setTimeout(r,50));           // 让 spinner 先绘制
+  try{ const p=await computeQualification(stCache.groups); qualProb=p; qualSig=sig; }
+  catch(e){ console.warn('出线概率测算失败',e); qualProb=null; }
+  qualBusy=false; if(stTab==='groups') stPaint();
+}
+
 async function renderScheduleLive(){
   try{
     const fxs=await api(`/fixtures?league=${CONFIG.LEAGUE_ID}&season=${CONFIG.SEASON}`);   // 全部赛程
@@ -1718,9 +1873,13 @@ async function renderScheduleLive(){
       days[day].forEach(f=>{
         const dt=new Date(f.fixture.date), hhmm=dt.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',hour12:false});
         const st=f.fixture.status.short, isLive=LIVE_ST.includes(st), done=DONE_ST.includes(st);
+        const left=dt.getTime()-Date.now(), within24=(st==='NS'&&left>0&&left<=86400000);
         const sH=f.goals.home, sA=f.goals.away, hasS=(sH!=null&&sA!=null);
         const venue=(f.fixture.venue&&f.fixture.venue.name)?(f.fixture.venue.name+(f.fixture.venue.city?(' · '+f.fixture.venue.city):'')):'';
-        const pill = isLive?'<span class="pill live">● Live</span>' : done?'<span class="pill done">完场</span>' : '<span class="pill soon">未开始</span>';
+        const pill = isLive?'<span class="pill live">● Live</span>'
+          : done?'<span class="pill done">完场</span>'
+          : within24?`<span class="pill cd" data-cd="${dt.getTime()}">距开赛 --:--:--</span>`
+          : '<span class="pill soon">未开始</span>';
         html+=`<div class="fix${isLive?' is-live':''}" onclick="openMatchupLive(${f.fixture.id})">
           <div class="time">${hhmm}<small>${roundCN(f.league.round)}</small></div>
           <div class="match">
@@ -1734,6 +1893,7 @@ async function renderScheduleLive(){
       html+='</div>';
     });
     document.getElementById('v-sched').innerHTML=html;
+    wireCountdowns(document.getElementById('v-sched'));
   }catch(e){ console.warn('实时赛程获取失败，保留演示赛程：',e); }
 }
 if(LIVE){ renderScheduleLive(); }
@@ -1897,6 +2057,7 @@ function tick(){
   if(!LIVE) return;   // 演示模式不轮询（启动时已显示空状态）
   if(!document.getElementById('v-live').classList.contains('on')) return;  // 只在查看实况时轮询
   liveTick();
+  renderUpcoming24();   // 同步刷新「即将开赛」
 }
 
 (function initMode(){

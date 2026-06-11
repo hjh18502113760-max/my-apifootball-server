@@ -984,7 +984,7 @@ const autoBase = (typeof location!=='undefined' && /^https?:$/.test(location.pro
 const SERVER_BASE = (CONFIG.SERVER_BASE && CONFIG.SERVER_BASE.length) ? CONFIG.SERVER_BASE : (CONFIG.API_KEY.length ? '' : autoBase);
 const USE_SERVER = CONFIG.USE_LIVE && SERVER_BASE.length > 0 && CONFIG.API_KEY.length === 0;   // 走共享代理(含自动同源)
 const LIVE = CONFIG.USE_LIVE && (USE_SERVER || CONFIG.API_KEY.length > 0);                      // 实时(代理或直连)
-try{ console.log('[胜率预测] BUILD=2026-06-r5 | USE_LIVE='+CONFIG.USE_LIVE+' | origin='+(typeof location!=='undefined'?location.origin:'-')+' | SERVER_BASE='+SERVER_BASE+' | USE_SERVER='+USE_SERVER+' | LIVE='+LIVE); }catch(_){}
+try{ console.log('[胜率预测] BUILD=2026-06-r6 | USE_LIVE='+CONFIG.USE_LIVE+' | origin='+(typeof location!=='undefined'?location.origin:'-')+' | SERVER_BASE='+SERVER_BASE+' | USE_SERVER='+USE_SERVER+' | LIVE='+LIVE); }catch(_){}
 let liveScoreList = null;           // 实时模型算出的比分榜，供 topScores 使用
 
 /* —— 泊松 / Dixon-Coles 简化预测引擎（与第二轮讨论的模型一致）—— */
@@ -1660,32 +1660,45 @@ function stPaint(){
     return;
   }
   const {ranked, qualifiedIds}=bestThirds(groups);
-  const played=groups.some(g=>g.some(t=>t.p>0));
+  const anyPlayed=groups.some(g=>g.some(t=>t.p>0));
+  const allDone=groups.every(g=>g.every(t=>t.p>=3));   // 所有小组赛全部踢完
   let html=tabs;
-  html+=`<div class="st-note">出线规则：每组<b style="color:var(--a)">前 2 名直接出线</b>，外加各组<b style="color:var(--warn)">第 3 名中最好的 8 队</b>（按 积分→净胜球→进球数 排）。第三名为<b>暂定</b>，须等小组赛全部结束；官方极端同分时还比球队行为分/FIFA排名，本表按主排序近似。</div>`;
+  if(!anyPlayed){
+    html+=`<div class="st-note">本届世界杯<b style="color:var(--warn)">尚未开赛</b>，出线状态暂不显示；开赛后将根据每场真实赛况（积分 / 净胜球 / 进球）实时计算并更新。下方仅为分组与排名占位。</div>`;
+  } else {
+    html+=`<div class="st-note">出线规则：每组<b style="color:var(--a)">前 2 名直接出线</b>，外加各组<b style="color:var(--warn)">第 3 名中最好的 8 队</b>（按 积分→净胜球→进球数）。小组未踢完前均标<b>暂列</b>，全部结束才确定；官方极端同分时还比球队行为分/FIFA排名，本表按主排序近似。</div>`;
+  }
   groups.forEach((g,gi)=>{
+    const gStarted=g.some(t=>t.p>0), gDone=g.every(t=>t.p>=3);
     const gname=g[0]&&g[0].group?g[0].group:('Group '+String.fromCharCode(65+gi));
     html+=`<div class="gcard"><h3>${gname}</h3>`;
     html+=`<div class="strow head"><span class="rk">#</span><span></span><span class="c">场</span><span class="c">胜</span><span class="c">平</span><span class="c">负</span><span class="c">净</span><span class="pt">分</span></div>`;
     g.forEach(t=>{
       let badge='', cls='';
-      if(t.rank<=2){ badge='<span class="qbadge qb-out">出线</span>'; cls='q1'; }
-      else if(t.rank===3){ cls='q3'; badge = qualifiedIds.has(t.id) ? '<span class="qbadge qb-out">暂列出线</span>' : '<span class="qbadge qb-mid">待定</span>'; }
-      else { badge='<span class="qbadge qb-elim">淘汰</span>'; }
+      if(gStarted){                                   // 未开赛 → 不显示任何出线状态
+        if(t.rank<=2){ cls='q1'; badge = gDone ? '<span class="qbadge qb-out">出线</span>' : '<span class="qbadge qb-mid">暂列前二</span>'; }
+        else if(t.rank===3){ cls='q3';
+          badge = allDone
+            ? (qualifiedIds.has(t.id) ? '<span class="qbadge qb-out">出线</span>' : '<span class="qbadge qb-elim">淘汰</span>')
+            : (qualifiedIds.has(t.id) ? '<span class="qbadge qb-out">暂列出线</span>' : '<span class="qbadge qb-mid">暂列第三</span>'); }
+        else { badge = gDone ? '<span class="qbadge qb-elim">淘汰</span>' : '<span class="qbadge qb-elim">暂列末位</span>'; }
+      }
       html+=`<div class="strow ${cls}"><span class="rk">${t.rank}</span><span class="nm">${t.logo?`<img src="${t.logo}">`:''}<span style="overflow:hidden;text-overflow:ellipsis">${t.name}</span>${badge}</span><span class="c">${t.p}</span><span class="c">${t.w}</span><span class="c">${t.d}</span><span class="c">${t.l}</span><span class="c">${t.gd>0?'+':''}${t.gd}</span><span class="pt">${t.pts}</span></div>`;
     });
     html+='</div>';
   });
-  if(ranked.length){
-    html+=`<div class="gcard"><h3>最佳第三名排名 <span class="gtag">前 8 暂列出线</span></h3>`;
+  if(anyPlayed && ranked.length){                     // 有真实数据才显示最佳第三名横向排名
+    html+=`<div class="gcard"><h3>最佳第三名排名 <span class="gtag">${allDone?'前 8 出线':'前 8 暂列出线'}</span></h3>`;
     html+=`<div class="strow head" style="grid-template-columns:20px 1fr 30px 30px 30px"><span class="rk">#</span><span></span><span class="c">净</span><span class="c">进</span><span class="pt">分</span></div>`;
     ranked.forEach((t,i)=>{
       const q=i<8;
-      html+=`<div class="strow ${q?'q1':''}" style="grid-template-columns:20px 1fr 30px 30px 30px"><span class="rk">${i+1}</span><span class="nm">${t.logo?`<img src="${t.logo}">`:''}<span style="overflow:hidden;text-overflow:ellipsis">${t.name}</span>${q?'<span class="qbadge qb-out">暂列出线</span>':'<span class="qbadge qb-elim">暂列淘汰</span>'}</span><span class="c">${t.gd>0?'+':''}${t.gd}</span><span class="c">${t.gf}</span><span class="pt">${t.pts}</span></div>`;
+      const tb = allDone
+        ? (q?'<span class="qbadge qb-out">出线</span>':'<span class="qbadge qb-elim">淘汰</span>')
+        : (q?'<span class="qbadge qb-out">暂列出线</span>':'<span class="qbadge qb-elim">暂列淘汰</span>');
+      html+=`<div class="strow ${q?'q1':''}" style="grid-template-columns:20px 1fr 30px 30px 30px"><span class="rk">${i+1}</span><span class="nm">${t.logo?`<img src="${t.logo}">`:''}<span style="overflow:hidden;text-overflow:ellipsis">${t.name}</span>${tb}</span><span class="c">${t.gd>0?'+':''}${t.gd}</span><span class="c">${t.gf}</span><span class="pt">${t.pts}</span></div>`;
     });
     html+='</div>';
   }
-  if(!played) html+='<div class="st-note">本届世界杯尚未开赛或刚开赛，数据多为 0，会随每场结果实时更新。</div>';
   body.innerHTML=html;
 }
 function stSwitch(t){ stTab=t; stPaint(); }

@@ -336,6 +336,30 @@ canvas{width:100%; height:128px; display:block}
 .mh-prelim{background:rgba(255,178,62,.09); border:1px solid rgba(255,178,62,.35); border-radius:12px; padding:12px 14px; font-size:12.5px; line-height:1.7; color:var(--warn); margin-bottom:12px}
 .mh-prelim b{color:#ffd089}
 .mh-ready{background:rgba(198,255,68,.07); border:1px solid rgba(198,255,68,.28); border-radius:12px; padding:10px 14px; font-size:12px; line-height:1.6; color:var(--a); margin-bottom:12px}
+/* ---- 积分榜 / 出线 / 射手榜 ---- */
+.st-tabs{display:flex; gap:8px; margin:2px 0 14px}
+.st-tabs button{flex:1; background:var(--surface); border:1px solid rgba(255,255,255,.08); color:var(--muted); font-family:var(--ui); font-size:13px; padding:9px 0; border-radius:10px; cursor:pointer}
+.st-tabs button.on{background:rgba(198,255,68,.12); border-color:rgba(198,255,68,.45); color:var(--a); font-weight:700}
+.gcard{background:var(--surface); border:1px solid rgba(255,255,255,.07); border-radius:14px; padding:12px 12px 6px; margin-bottom:12px}
+.gcard h3{font-family:var(--ui); font-size:14px; letter-spacing:.04em; margin:0 0 8px; color:var(--txt); display:flex; align-items:center; gap:8px}
+.gcard h3 .gtag{font-size:10px; color:var(--faint); font-weight:400}
+.strow{display:grid; grid-template-columns:20px 1fr repeat(5,26px) 30px; gap:4px; align-items:center; font-size:12px; padding:6px 2px; border-top:1px solid rgba(255,255,255,.05)}
+.strow.head{color:var(--faint); font-size:10px; border:none; padding:2px}
+.strow .rk{text-align:center; color:var(--muted)}
+.strow .nm{display:flex; align-items:center; gap:6px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis}
+.strow .nm img{width:18px;height:18px;border-radius:3px;object-fit:cover;flex:none}
+.strow .c{text-align:center; color:var(--muted)}
+.strow .pt{text-align:center; font-weight:700; color:var(--txt)}
+.strow.q1{background:linear-gradient(90deg,rgba(198,255,68,.10),transparent)}
+.strow.q3{background:linear-gradient(90deg,rgba(255,178,62,.10),transparent)}
+.qbadge{display:inline-block; font-size:9px; padding:1px 5px; border-radius:5px; margin-left:4px; vertical-align:middle}
+.qb-out{background:rgba(198,255,68,.16); color:var(--a)} .qb-mid{background:rgba(255,178,62,.16); color:var(--warn)} .qb-elim{background:rgba(255,255,255,.06); color:var(--faint)}
+.st-note{font-size:11px; color:var(--faint); line-height:1.6; background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.06); border-radius:10px; padding:9px 12px; margin:4px 0 14px}
+.scrow{display:grid; grid-template-columns:24px 1fr auto; gap:8px; align-items:center; font-size:13px; padding:8px 2px; border-top:1px solid rgba(255,255,255,.05)}
+.scrow .rk{text-align:center;color:var(--muted)} .scrow .g{font-weight:700;color:var(--a)}
+.scrow .nm{display:flex;align-items:center;gap:7px;overflow:hidden;white-space:nowrap}
+.scrow .nm small{color:var(--faint);font-size:11px}
+.st-empty{color:var(--faint); font-size:13px; text-align:center; padding:30px 10px; line-height:1.7}
 </style>
 </head>
 <body>
@@ -605,12 +629,21 @@ canvas{width:100%; height:128px; display:block}
           <div class="foot-note">重要度 = 球员对球队该环节的贡献占比 · 缺阵影响按此折算进胜率</div>
         </section>
 
+        <!-- ============ 积分 · 小组排名 / 出线形势 / 射手榜 ============ -->
+        <section class="view" id="v-standings">
+          <div class="vhead">
+            <div><h1>积分榜</h1><div class="sub" id="stSub">小组排名 · 出线形势 · 射手榜</div></div>
+          </div>
+          <div id="stBody"></div>
+        </section>
+
       </div><!-- /body -->
 
       <nav class="tabbar">
         <button class="tab" data-v="sched"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg><span>赛程</span></button>
         <button class="tab on" data-v="live"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M5.6 5.6a9 9 0 0 0 0 12.8M18.4 5.6a9 9 0 0 1 0 12.8M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7"/></svg><span>实况</span></button>
         <button class="tab" data-v="teams"><svg viewBox="0 0 24 24"><path d="M4 20v-2a4 4 0 0 1 4-4h2M14 14h2a4 4 0 0 1 4 4v2"/><circle cx="9" cy="7" r="3"/><circle cx="17" cy="9" r="2.5"/></svg><span>球队</span></button>
+        <button class="tab" data-v="standings"><svg viewBox="0 0 24 24"><path d="M4 19V5M4 19h16M8 19v-6M12 19V9M16 19v-9M20 19v-4"/></svg><span>积分</span></button>
       </nav>
 
       <!-- ============ 豆包 AI 助手 ============ -->
@@ -622,6 +655,7 @@ canvas{width:100%; height:128px; display:block}
       <section class="ai-panel" id="aiPanel" aria-hidden="true">
         <div class="ai-head">
           <div class="ai-ttl"><b>问豆包</b><small>AI 助手 · 世界杯看球答疑</small></div>
+          <button class="ai-x" id="aiClear" aria-label="清空记录" title="清空本机记录" style="font-size:12px;width:auto;padding:0 8px;margin-right:4px">清空记录</button>
           <button class="ai-x" id="aiClose" aria-label="关闭">✕</button>
         </div>
         <div class="ai-body" id="aiBody">
@@ -648,13 +682,14 @@ canvas{width:100%; height:128px; display:block}
 
 <script>
 /* ---------- tab switching ---------- */
-const tabs=document.querySelectorAll('.tab'), views={sched:'v-sched',live:'v-live',teams:'v-teams'};
+const tabs=document.querySelectorAll('.tab'), views={sched:'v-sched',live:'v-live',teams:'v-teams',standings:'v-standings'};
 function hideAllViews(){document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));}
 function show(v){
   hideAllViews();
   tabs.forEach(t=>t.classList.toggle('on',t.dataset.v===v));
   document.getElementById(views[v]).classList.add('on');
   if(v==='live') requestAnimationFrame(drawTrend);
+  if(v==='standings') renderStandings();
 }
 tabs.forEach(t=>t.onclick=()=>show(t.dataset.v));
 document.querySelectorAll('[data-go="live"]').forEach(f=>f.onclick=()=>show('live'));
@@ -949,7 +984,7 @@ const autoBase = (typeof location!=='undefined' && /^https?:$/.test(location.pro
 const SERVER_BASE = (CONFIG.SERVER_BASE && CONFIG.SERVER_BASE.length) ? CONFIG.SERVER_BASE : (CONFIG.API_KEY.length ? '' : autoBase);
 const USE_SERVER = CONFIG.USE_LIVE && SERVER_BASE.length > 0 && CONFIG.API_KEY.length === 0;   // 走共享代理(含自动同源)
 const LIVE = CONFIG.USE_LIVE && (USE_SERVER || CONFIG.API_KEY.length > 0);                      // 实时(代理或直连)
-try{ console.log('[胜率预测] BUILD=2026-06-r4 | USE_LIVE='+CONFIG.USE_LIVE+' | origin='+(typeof location!=='undefined'?location.origin:'-')+' | SERVER_BASE='+SERVER_BASE+' | USE_SERVER='+USE_SERVER+' | LIVE='+LIVE); }catch(_){}
+try{ console.log('[胜率预测] BUILD=2026-06-r5 | USE_LIVE='+CONFIG.USE_LIVE+' | origin='+(typeof location!=='undefined'?location.origin:'-')+' | SERVER_BASE='+SERVER_BASE+' | USE_SERVER='+USE_SERVER+' | LIVE='+LIVE); }catch(_){}
 let liveScoreList = null;           // 实时模型算出的比分榜，供 topScores 使用
 
 /* —— 泊松 / Dixon-Coles 简化预测引擎（与第二轮讨论的模型一致）—— */
@@ -1058,27 +1093,95 @@ function showQuotaExhausted(){
   if(tag){ tag.textContent='额度用尽 · 暂停刷新'; tag.style.color='var(--live)'; tag.style.borderColor='rgba(255,77,94,.4)'; }
   renderQuota();
 }
-async function teamStrength(id){
+/* ===================== 实力先验（FIFA 排名分）+ 对手强弱调整 + 赛事加权 + 时间衰减 + 融合 =====================
+   说明：FIFA 分用作"实力锚点"，并据此给近况里每个对手按强弱加权。
+   前 20 为精确值（FIFA 官方榜，截至 2026-01）；其余为近似先验（approximate），仅作锚点、会被真实比赛数据逐步覆盖；
+   表中查不到的球队 → 自动回退到纯近况算法。 */
+const FIFA_PTS = {
+  spain:1877, argentina:1873, france:1870, england:1834, brazil:1760, portugal:1760, netherlands:1756,
+  morocco:1737, belgium:1731, germany:1724, croatia:1717, senegal:1707, italy:1702, colombia:1701,
+  unitedstates:1682, mexico:1676, uruguay:1673, switzerland:1655, japan:1650, iran:1617,
+  // —— 以下为近似先验(approximate)，会被真实数据覆盖 ——
+  austria:1580, ecuador:1570, koreareublic:1565, korearepublic:1565, southkorea:1565, norway:1560,
+  australia:1500, ivorycoast:1525, egypt:1520, algeria:1500, nigeria:1500, panama:1490, paraguay:1490,
+  tunisia:1490, mali:1490, peru:1480, ghana:1480, venezuela:1470, saudiarabia:1470, qatar:1455,
+  southafrica:1450, uzbekistan:1435, honduras:1420, jamaica:1405, capeverde:1390, jordan:1390,
+  curacao:1370, haiti:1335, newzealand:1300, denmark:1620, sweden:1560, scotland:1560, wales:1560,
+  poland:1560, ukraine:1530, turkey:1620, serbia:1570, hungary:1530, czechia:1530, slovakia:1490,
+  romania:1490, greece:1500, slovenia:1490, georgia:1490, bosniaandherzegovina:1490, costarica:1490,
+  cameroon:1510, burkinafaso:1480, drcongo:1490, angola:1400, gabon:1420, benin:1380, namibia:1320,
+  iraq:1430, unitedarabemirates:1410, oman:1400, china:1280, indonesia:1290, palestine:1360, bahrain:1340,
+  bolivia:1370, chile:1560, canada:1540
+};
+const FIFA_ALIAS = {
+  usa:'unitedstates', us:'unitedstates', unitedstatesofamerica:'unitedstates',
+  korearepublic:'southkorea', republicofkorea:'southkorea', southkorea:'southkorea',
+  iriran:'iran', czechrepublic:'czechia', bosniaherzegovina:'bosniaandherzegovina',
+  cotedivoire:'ivorycoast', caboverde:'capeverde', drcongo:'drcongo', congodr:'drcongo',
+  uae:'unitedarabemirates'
+};
+function _norm(s){ return String(s||'').toLowerCase().replace(/[^a-z]/g,''); }
+function fifaPts(name){
+  let k=_norm(name); if(FIFA_ALIAS[k]) k=FIFA_ALIAS[k];
+  return FIFA_PTS[k]!=null ? FIFA_PTS[k] : null;
+}
+function oppFactor(name){ const p=fifaPts(name); return p==null?1:Math.exp(((p-1500)/350)*0.5); }   // 对手越强→>1
+function priorStrength(name){ const p=fifaPts(name); if(p==null) return null; const f=Math.exp(((p-1500)/350)*0.18); return {att:f, def:f}; }
+function compWeight(name){
+  name=String(name||'').toLowerCase();
+  if(name.includes('friendl')) return 0.5;
+  if(name.includes('qualif')) return 1.0;                 // 预选赛（含 World Cup Qualifiers）需先判
+  if(name.includes('nations league')) return 1.0;
+  if(name.includes('world cup')) return 1.3;              // 世界杯正赛
+  if(name.includes('euro')||name.includes('copa')||name.includes('afcon')||name.includes('africa cup')||name.includes('asian cup')||name.includes('gold cup')) return 1.2;
+  return 0.9;
+}
+// 对手加权 + 赛事加权 + 时间衰减的近况强度
+function formStrength(fx, id){
+  const done=(fx||[]).filter(f=>['FT','AET','PEN'].includes(f.fixture.status.short));
+  if(done.length<3) return null;
+  const now=Date.now(); let sGF=0,sGA=0,sW=0;
+  done.forEach(f=>{
+    const home=f.teams.home.id===id;
+    const gf=(home?f.goals.home:f.goals.away)||0, ga=(home?f.goals.away:f.goals.home)||0;
+    const opp=oppFactor(home?f.teams.away.name:f.teams.home.name);
+    const adjGF=gf*Math.pow(opp,0.5), adjGA=ga/Math.pow(opp,0.5);        // 打强队进球更值钱、失球更可原谅
+    const comp=compWeight(f.league&&f.league.name);
+    const decay=Math.pow(0.5, Math.max(0,(now-new Date(f.fixture.date).getTime())/86400000)/365);  // 每年减半
+    const w=comp*decay; sGF+=adjGF*w; sGA+=adjGA*w; sW+=w;
+  });
+  if(sW<=0) return null;
+  return {att:(sGF/sW)/CONFIG.LEAGUE_AVG, def:CONFIG.LEAGUE_AVG/Math.max(0.4, sGA/sW)};
+}
+// 融合：本届世界杯数据(权重随场次上升) + FIFA先验 + 加权近况
+async function coreStrength(id, name){
   const clamp=x=>Math.max(0.55, Math.min(1.85, x));
+  const prior=priorStrength(name);
+  let wc=null, wcPlayed=0;
   try{
     const r=await api(`/teams/statistics?team=${id}&league=${CONFIG.LEAGUE_ID}&season=${CONFIG.SEASON}`);
-    const played=(r&&r.fixtures&&r.fixtures.played&&r.fixtures.played.total)||0;
-    if(played>0){
+    wcPlayed=(r&&r.fixtures&&r.fixtures.played&&r.fixtures.played.total)||0;
+    if(wcPlayed>0){
       const gf=parseFloat(r.goals.for.average.total)||CONFIG.LEAGUE_AVG;
       const ga=parseFloat(r.goals.against.average.total)||CONFIG.LEAGUE_AVG;
-      return {attack:clamp(gf/CONFIG.LEAGUE_AVG), defense:clamp(ga/CONFIG.LEAGUE_AVG)};
+      wc={att:gf/CONFIG.LEAGUE_AVG, def:CONFIG.LEAGUE_AVG/Math.max(0.4,ga)};
     }
   }catch(e){}
-  try{
-    const fx=await api(`/fixtures?team=${id}&last=12`);
-    const done=(fx||[]).filter(f=>['FT','AET','PEN'].includes(f.fixture.status.short));
-    if(done.length>=3){
-      let gf=0,ga=0;
-      done.forEach(f=>{ const home=f.teams.home.id===id; gf+=(home?f.goals.home:f.goals.away)||0; ga+=(home?f.goals.away:f.goals.home)||0; });
-      return {attack:clamp((gf/done.length)/CONFIG.LEAGUE_AVG), defense:clamp((ga/done.length)/CONFIG.LEAGUE_AVG)};
-    }
-  }catch(e){}
-  return {attack:1,defense:1};
+  let form=null;
+  try{ form=formStrength(await api(`/fixtures?team=${id}&last=18`), id); }catch(e){}
+  const parts=[];
+  if(wc) parts.push({w:Math.min(0.7, wcPlayed*0.22), v:wc});           // 世界杯真实数据权重随场次上升(上限0.7)
+  let rem=1-parts.reduce((a,p)=>a+p.w,0);
+  if(prior&&form){ parts.push({w:rem*0.5,v:prior}); parts.push({w:rem*0.5,v:form}); }
+  else if(form){ parts.push({w:rem,v:form}); }
+  else if(prior){ parts.push({w:rem,v:prior}); }
+  else { parts.push({w:rem,v:{att:1,def:1}}); }
+  const ws=parts.reduce((a,p)=>a+p.w,0)||1;
+  return { att:clamp(parts.reduce((a,p)=>a+p.w*p.v.att,0)/ws), def:clamp(parts.reduce((a,p)=>a+p.w*p.v.def,0)/ws) };
+}
+async function teamStrength(id, name){
+  const s=await coreStrength(id, name);
+  return {attack:s.att, defense:s.def};   // schedule/topScores 用
 }
 function pickStat(team,type){const o=team.statistics.find(x=>x.type===type);return o?o.value:null;}
 async function liveStats(fixtureId){
@@ -1099,6 +1202,7 @@ async function liveStats(fixtureId){
 
 /* ===================== 赛前对阵 · 重要度权重 · 伤停折减 ===================== */
 let matchupTeams=[1,3];                 // 当前对阵的两队下标
+let marketProbs=null;                     // 当前对阵的市场赔率概率 {h,d,a}（去水后），无则 null
 let mhLineupReady=false;                 // 该场是否已拿到真实首发名单（决定初步/正式预测）
 let playerOriginFn=()=>show('teams');   // 球员页返回去向
 
@@ -1234,6 +1338,7 @@ function openMatchup(iH,iA,stage){
   const tag=document.querySelector('#v-matchup .comp .demo-tag');
   const isLiveMatch=(iH===6 && iA===7);   // 实时对阵使用 teams[6/7]
   if(!isLiveMatch){
+    marketProbs=null;
     // —— 示例：全部数值归零，仅保留界面骨架 ——
     document.querySelector('#v-matchup .tdhead .sm').textContent='示例界面 · 不含真实数据';
     if(comp) comp.textContent='示例演示 · 非真实预测';
@@ -1251,6 +1356,16 @@ function openMatchup(iH,iA,stage){
   if(comp) comp.textContent = ready ? '赛前预测 · 已含首发阵容' : '初步预测 · 未含首发';
   if(tag) tag.textContent = ready ? '已含首发' : '初步';
   const pr=predictMatch(iH,iA,stage);
+  // —— 融合市场赔率（有则取适度权重，无则纯模型）——
+  let oddsTag='';
+  if(marketProbs && isFinite(marketProbs.h+marketProbs.d+marketProbs.a)){
+    const wM=0.35;                                  // 赔率权重（适度，模型仍为主）
+    let h=(1-wM)*pr.a + wM*marketProbs.h*100;
+    let d=(1-wM)*pr.d + wM*marketProbs.d*100;
+    let a=(1-wM)*pr.b + wM*marketProbs.a*100;
+    const s=h+d+a; if(s>0){ pr.a=h/s*100; pr.d=d/s*100; pr.b=a/s*100; }
+    oddsTag='<span style="display:inline-block;margin-left:6px;font-size:10px;color:var(--a);border:1px solid rgba(198,255,68,.4);border-radius:6px;padding:1px 6px;vertical-align:middle">已结合市场赔率</span>';
+  }
   document.querySelector('#v-matchup .tdhead .sm').textContent = ready
     ? (stage==='ko' ? '淘汰赛 · 已含首发' : '赛前预测 · 已含首发')
     : '初步预测 · 待首发公布';
@@ -1263,8 +1378,8 @@ function openMatchup(iH,iA,stage){
     document.getElementById('mhKoBreak').textContent=`90分钟分出 ${Math.round(pr.ko.in90)}% · 加时 ${Math.round(pr.ko.inET)}% · 点球 ${Math.round(pr.ko.inPens)}%`;
   } else { koT.style.display='none'; koS.style.display='none'; }
   const note = ready
-    ? '<div class="mh-ready">✓ 已读取双方首发名单，以下为已含首发的预测。</div>'
-    : '<div class="mh-prelim"><b>初步预测 · 未含首发名单</b>　以下数值基于双方近期实力与已知伤停，<b>仅供参考</b>；官方公布首发后（通常赛前约 1 小时）会自动升级为更准确的预测。这是正常的等待状态，并非功能缺失。</div>';
+    ? '<div class="mh-ready">✓ 已读取双方首发名单，以下为已含首发的预测。'+oddsTag+'</div>'
+    : '<div class="mh-prelim"><b>初步预测 · 未含首发名单</b>'+oddsTag+'　以下数值基于双方近期实力与已知伤停，<b>仅供参考</b>；官方公布首发后（通常赛前约 1 小时）会自动升级为更准确的预测。这是正常的等待状态，并非功能缺失。</div>';
   document.getElementById('mhImpact').innerHTML = note + impactLine(iH) + impactLine(iA);
   const mx=pr.scores[0][1], labs=['最可能','次可能','第三'];
   document.getElementById('mhScores').innerHTML=pr.scores.map((s,k)=>`<div class="sc"><div class="rank">${labs[k]}</div><div class="v">${s[0]}</div><div class="p">${s[1]}%</div><div class="pb"><i style="width:${s[1]/mx*100}%"></i></div></div>`).join('');
@@ -1390,29 +1505,33 @@ document.getElementById('pdBack').onclick=()=>playerOriginFn();
 /* ===================== ① 实时数据：赛程 + 对阵 + 首发（LIVE 时启用）===================== */
 const POS_GRID={G:'GK',D:'DF',M:'MF',F:'FW'};
 function posWeight(pos){ return {FW:0.26,MF:0.20,DF:0.15,GK:0.18}[pos]||0.15; }
-async function teamBaseLive(id){
-  const clamp=x=>Math.max(0.55, Math.min(1.85, x));
-  // ① 本届世界杯统计（开赛后才有数据）
+async function teamBaseLive(id, name){   // 委托融合模型：世界杯数据+FIFA先验+加权近况
+  return await coreStrength(id, name);
+}
+// 取实时赔率（Match Winner 1X2），去水后转为概率 {h,d,a}；无数据/出错返回 null
+async function fetchMarketProbs(fixtureId){
   try{
-    const r=await api(`/teams/statistics?team=${id}&league=${CONFIG.LEAGUE_ID}&season=${CONFIG.SEASON}`);
-    const played=(r&&r.fixtures&&r.fixtures.played&&r.fixtures.played.total)||0;
-    if(played>0){
-      const gf=parseFloat(r.goals.for.average.total)||CONFIG.LEAGUE_AVG;
-      const ga=parseFloat(r.goals.against.average.total)||CONFIG.LEAGUE_AVG;
-      return {att:clamp(gf/CONFIG.LEAGUE_AVG), def:clamp(CONFIG.LEAGUE_AVG/Math.max(0.4,ga))};
-    }
-  }catch(e){}
-  // ② 开赛前回退：该队近 12 场真实战绩（跨赛事：友谊赛/预选赛/国家联赛等）→ 各队实力不同
-  try{
-    const fx=await api(`/fixtures?team=${id}&last=12`);
-    const done=(fx||[]).filter(f=>['FT','AET','PEN'].includes(f.fixture.status.short));
-    if(done.length>=3){
-      let gf=0,ga=0;
-      done.forEach(f=>{ const home=f.teams.home.id===id; gf+=(home?f.goals.home:f.goals.away)||0; ga+=(home?f.goals.away:f.goals.home)||0; });
-      return {att:clamp((gf/done.length)/CONFIG.LEAGUE_AVG), def:clamp(CONFIG.LEAGUE_AVG/Math.max(0.4, ga/done.length))};
-    }
-  }catch(e){}
-  return {att:1,def:1};
+    const r=await api(`/odds?fixture=${fixtureId}`);
+    if(!r || !r.length) return null;
+    // 结构：[{bookmakers:[{bets:[{name:'Match Winner', values:[{value:'Home',odd:'1.80'},...]}]}]}]
+    let best=null;
+    (r[0].bookmakers||[]).forEach(bk=>{
+      (bk.bets||[]).forEach(bet=>{
+        if(/match winner|1x2|fulltime result/i.test(bet.name||'')){
+          const m={};
+          (bet.values||[]).forEach(v=>{
+            const key=/home|^1$/i.test(v.value)?'h':/draw|^x$/i.test(v.value)?'d':/away|^2$/i.test(v.value)?'a':null;
+            if(key) m[key]=parseFloat(v.odd);
+          });
+          if(m.h&&m.d&&m.a&&!best) best=m;
+        }
+      });
+    });
+    if(!best) return null;
+    const ih=1/best.h, id_=1/best.d, ia=1/best.a, s=ih+id_+ia;   // 去水（隐含概率归一）
+    if(!(s>0)) return null;
+    return {h:ih/s, d:id_/s, a:ia/s};
+  }catch(e){ return null; }
 }
 async function injuredNames(teamId){      // 伤停名单 → {球员名: 'inj'|'sus'}
   try{
@@ -1453,8 +1572,9 @@ async function openMatchupLive(fixtureId){
     const fxs=await api(`/fixtures?id=${fixtureId}`); const fx=fxs[0];
     const H=fx.teams.home, A=fx.teams.away;
     const [bH,bA,iH,iA,ageH,ageA,outH,outA]=await Promise.all([
-      teamBaseLive(H.id),teamBaseLive(A.id),injuredNames(H.id),injuredNames(A.id),
+      teamBaseLive(H.id,H.name),teamBaseLive(A.id,A.name),injuredNames(H.id),injuredNames(A.id),
       ageMapFor(H.id),ageMapFor(A.id),injuryList(H.id),injuryList(A.id)]);
+    marketProbs = await fetchMarketProbs(fixtureId);   // 赔率（有则用、无则 null，开赛临近才会有）
     const [lH,lA]=await Promise.all([fetchLineupFull(fixtureId,H.id,iH,ageH),fetchLineupFull(fixtureId,A.id,iA,ageA)]);
     teams[6]={fl:'⚽',logo:H.logo,nm:H.name,elo:0,form:[],ch:0,mlog:[],base:bH,apiId:H.id};
     teams[7]={fl:'⚽',logo:A.logo,nm:A.name,elo:0,form:[],ch:0,mlog:[],base:bA,apiId:A.id};
@@ -1477,6 +1597,99 @@ function roundCN(r){
   if(/Group/i.test(r)){ const m=r.match(/(\d+)\s*$/); return '小组赛'+(m?(' R'+m[1]):''); }
   return r;
 }
+/* ===== 积分榜 / 出线形势 / 射手榜 ===== */
+let stTab='groups';                 // groups | scorers
+let stCache=null;                   // 简单缓存
+function renderStandings(){
+  const body=document.getElementById('stBody');
+  if(!LIVE){
+    document.getElementById('stSub').textContent='示例 · 接入实时数据后显示';
+    body.innerHTML='<div class="st-empty">接入实时数据后，这里会显示本届世界杯<br>12 个小组的积分排名、出线形势与射手榜。<br><span style="font-size:11px">（开赛后随赛程推进逐场更新）</span></div>';
+    return;
+  }
+  body.innerHTML='<div class="st-empty">加载中…</div>';
+  if(stCache){ stPaint(); } else { stLoadLive(); }
+}
+async function stLoadLive(){
+  try{
+    const [standings, scorers]=await Promise.all([
+      api(`/standings?league=${CONFIG.LEAGUE_ID}&season=${CONFIG.SEASON}`).catch(()=>null),
+      api(`/players/topscorers?league=${CONFIG.LEAGUE_ID}&season=${CONFIG.SEASON}`).catch(()=>null)
+    ]);
+    let groups=[];
+    if(standings && standings[0] && standings[0].league && standings[0].league.standings){
+      groups=standings[0].league.standings.map(g=>g.map(t=>({
+        id:t.team.id, name:t.team.name, logo:t.team.logo, rank:t.rank,
+        p:t.all.played, w:t.all.win, d:t.all.draw, l:t.all.lose,
+        gf:t.all.goals.for, ga:t.all.goals.against, gd:t.goalsDiff, pts:t.points,
+        group:t.group||''
+      })));
+    }
+    stCache={groups, scorers:scorers||[]};
+    stPaint();
+  }catch(e){
+    document.getElementById('stBody').innerHTML='<div class="st-empty">积分数据暂未获取到<br><span style="font-size:11px">开赛后会逐步更新</span></div>';
+  }
+}
+// 8 个最佳第三名（按 积分→净胜球→进球数）
+function bestThirds(groups){
+  const thirds=groups.map(g=>g.find(t=>t.rank===3)).filter(Boolean);
+  thirds.sort((a,b)=> b.pts-a.pts || b.gd-a.gd || b.gf-a.gf);
+  return {ranked:thirds, qualifiedIds:new Set(thirds.slice(0,8).map(t=>t.id))};
+}
+function stPaint(){
+  const body=document.getElementById('stBody'), sub=document.getElementById('stSub');
+  const {groups, scorers}=stCache;
+  const tabs=`<div class="st-tabs">
+    <button class="${stTab==='groups'?'on':''}" onclick="stSwitch('groups')">小组 / 出线</button>
+    <button class="${stTab==='scorers'?'on':''}" onclick="stSwitch('scorers')">射手榜</button></div>`;
+  if(stTab==='scorers'){
+    sub.textContent='射手榜 · 进球数排名';
+    let rows='';
+    (scorers||[]).slice(0,30).forEach((s,i)=>{
+      const p=s.player||{}, st=(s.statistics&&s.statistics[0])||{};
+      const goals=(st.goals&&st.goals.total)||0, team=(st.team&&st.team.name)||'';
+      rows+=`<div class="scrow"><div class="rk">${i+1}</div><div class="nm">${p.photo?`<img src="${p.photo}" style="width:22px;height:22px;border-radius:50%;object-fit:cover">`:''}<span>${p.name||'—'} <small>${team}</small></span></div><div class="g">${goals} 球</div></div>`;
+    });
+    body.innerHTML=tabs+(rows?`<div style="background:var(--surface);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:6px 12px">${rows}</div>`:'<div class="st-empty">射手榜暂无数据<br><span style="font-size:11px">开赛进球后更新</span></div>');
+    return;
+  }
+  sub.textContent='小组排名 · 出线形势';
+  if(!groups||!groups.length){
+    body.innerHTML=tabs+'<div class="st-empty">小组积分暂无数据<br><span style="font-size:11px">开赛后随每场结果更新</span></div>';
+    return;
+  }
+  const {ranked, qualifiedIds}=bestThirds(groups);
+  const played=groups.some(g=>g.some(t=>t.p>0));
+  let html=tabs;
+  html+=`<div class="st-note">出线规则：每组<b style="color:var(--a)">前 2 名直接出线</b>，外加各组<b style="color:var(--warn)">第 3 名中最好的 8 队</b>（按 积分→净胜球→进球数 排）。第三名为<b>暂定</b>，须等小组赛全部结束；官方极端同分时还比球队行为分/FIFA排名，本表按主排序近似。</div>`;
+  groups.forEach((g,gi)=>{
+    const gname=g[0]&&g[0].group?g[0].group:('Group '+String.fromCharCode(65+gi));
+    html+=`<div class="gcard"><h3>${gname}</h3>`;
+    html+=`<div class="strow head"><span class="rk">#</span><span></span><span class="c">场</span><span class="c">胜</span><span class="c">平</span><span class="c">负</span><span class="c">净</span><span class="pt">分</span></div>`;
+    g.forEach(t=>{
+      let badge='', cls='';
+      if(t.rank<=2){ badge='<span class="qbadge qb-out">出线</span>'; cls='q1'; }
+      else if(t.rank===3){ cls='q3'; badge = qualifiedIds.has(t.id) ? '<span class="qbadge qb-out">暂列出线</span>' : '<span class="qbadge qb-mid">待定</span>'; }
+      else { badge='<span class="qbadge qb-elim">淘汰</span>'; }
+      html+=`<div class="strow ${cls}"><span class="rk">${t.rank}</span><span class="nm">${t.logo?`<img src="${t.logo}">`:''}<span style="overflow:hidden;text-overflow:ellipsis">${t.name}</span>${badge}</span><span class="c">${t.p}</span><span class="c">${t.w}</span><span class="c">${t.d}</span><span class="c">${t.l}</span><span class="c">${t.gd>0?'+':''}${t.gd}</span><span class="pt">${t.pts}</span></div>`;
+    });
+    html+='</div>';
+  });
+  if(ranked.length){
+    html+=`<div class="gcard"><h3>最佳第三名排名 <span class="gtag">前 8 暂列出线</span></h3>`;
+    html+=`<div class="strow head" style="grid-template-columns:20px 1fr 30px 30px 30px"><span class="rk">#</span><span></span><span class="c">净</span><span class="c">进</span><span class="pt">分</span></div>`;
+    ranked.forEach((t,i)=>{
+      const q=i<8;
+      html+=`<div class="strow ${q?'q1':''}" style="grid-template-columns:20px 1fr 30px 30px 30px"><span class="rk">${i+1}</span><span class="nm">${t.logo?`<img src="${t.logo}">`:''}<span style="overflow:hidden;text-overflow:ellipsis">${t.name}</span>${q?'<span class="qbadge qb-out">暂列出线</span>':'<span class="qbadge qb-elim">暂列淘汰</span>'}</span><span class="c">${t.gd>0?'+':''}${t.gd}</span><span class="c">${t.gf}</span><span class="pt">${t.pts}</span></div>`;
+    });
+    html+='</div>';
+  }
+  if(!played) html+='<div class="st-note">本届世界杯尚未开赛或刚开赛，数据多为 0，会随每场结果实时更新。</div>';
+  body.innerHTML=html;
+}
+function stSwitch(t){ stTab=t; stPaint(); }
+
 async function renderScheduleLive(){
   try{
     const fxs=await api(`/fixtures?league=${CONFIG.LEAGUE_ID}&season=${CONFIG.SEASON}`);   // 全部赛程
@@ -1648,7 +1861,7 @@ async function liveTick(){
     document.getElementById('flagA').innerHTML=mk(fx.teams.home.logo);
     document.getElementById('flagB').innerHTML=mk(fx.teams.away.logo);
     if(!cachedLambdas || cachedFixture!==fx.fixture.id){
-      const [sh,sa]=await Promise.all([teamStrength(fx.teams.home.id),teamStrength(fx.teams.away.id)]);
+      const [sh,sa]=await Promise.all([teamStrength(fx.teams.home.id,fx.teams.home.name),teamStrength(fx.teams.away.id,fx.teams.away.name)]);
       cachedLambdas=lambdas(sh,sa); cachedFixture=fx.fixture.id; lastPredAt=0; domA=domB=1;
     }
     const scoreKey=sA+'-'+sB, now=Date.now();
@@ -1713,6 +1926,26 @@ else { clearLiveBoard('demo'); }
   const aiBase = SERVER_BASE || (/^https?:$/.test(location.protocol) ? location.origin : '');
   if(!aiBase || !fab){ if(fab) fab.classList.add('hide'); return; }   // 无服务器(本地预览)时隐藏
   const MAX_UNITS=300;
+  const HKEY='wc_ai_hist_v1', HMAX_PAIRS=100;     // 本机保存最多 100 组问答
+  const clearBtn=document.getElementById('aiClear');
+  const initialBodyHTML=bodyEl.innerHTML;          // 欢迎语+快捷问题，用于清空后还原
+  function loadSaved(){ try{ const a=JSON.parse(localStorage.getItem(HKEY)||'[]'); return Array.isArray(a)?a:[]; }catch(_){ return []; } }
+  function persist(saved){ try{ localStorage.setItem(HKEY, JSON.stringify(saved.slice(-HMAX_PAIRS*2))); }catch(_){ } }
+  let saved=loadSaved();
+  function bindChips(){ const c=document.getElementById('aiChips'); if(c){ c.querySelectorAll('button').forEach(b=>b.onclick=()=>ask(b.textContent)); } }
+  function restoreSaved(){      // 把本机记录渲染出来（仅展示翻阅，不计入发送给模型的上下文）
+    if(!saved.length) return;
+    const c=document.getElementById('aiChips'); if(c&&c.parentNode) c.parentNode.removeChild(c);   // 有历史则去掉快捷问题
+    const sep=document.createElement('div'); sep.style.cssText='text-align:center;color:var(--faint);font-size:11px;margin:8px 0 4px'; sep.textContent='—— 本机历史记录 ——'; bodyEl.appendChild(sep);
+    saved.forEach(m=>{ const d=document.createElement('div'); d.className='ai-msg '+(m.role==='user'?'me':'bot'); d.textContent=m.content; bodyEl.appendChild(d); });
+    bodyEl.scrollTop=bodyEl.scrollHeight;
+  }
+  function clearHistory(){
+    saved=[]; try{ localStorage.removeItem(HKEY); }catch(_){}
+    history=[];                                    // 同时清掉当前会话上下文
+    bodyEl.innerHTML=initialBodyHTML; bindChips();
+  }
+  function saveTurn(q, a){ saved.push({role:'user',content:q},{role:'assistant',content:a}); persist(saved); }
   // 字数：中文字=1，英文单词=1（含标点；空格不计）
   function countUnits(s){ const m=String(s||'').match(/[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff\u3000-\u303f\uff00-\uffef]|[A-Za-z0-9]+(?:['\u2019\-_][A-Za-z0-9]+)*|[^\s]/g); return m?m.length:0; }
   let history=[], busy=false;
@@ -1738,7 +1971,7 @@ else { clearLiveBoard('demo'); }
         if(j && j.error){ addMsg(j.error,'err'); return; }
         // 兜底：把 SSE 文本一次性解析出来
         let acc=''; txt.split('\n').forEach(l=>{ l=l.trim(); if(l.indexOf('data:')!==0) return; const d=l.slice(5).trim(); if(d==='[DONE]')return; try{const o=JSON.parse(d); if(o.t)acc+=o.t;}catch(_){}});
-        if(acc){ addMsg(acc,'bot'); history.push({role:'assistant',content:acc}); } else { addMsg('没有返回内容，请重试','err'); }
+        if(acc){ addMsg(acc,'bot'); history.push({role:'assistant',content:acc}); saveTurn(q,acc); } else { addMsg('没有返回内容，请重试','err'); }
         return;
       }
       // 流式
@@ -1754,7 +1987,7 @@ else { clearLiveBoard('demo'); }
           try{ const o=JSON.parse(d); if(o.t){ acc+=o.t; bot.textContent=acc; bodyEl.scrollTop=bodyEl.scrollHeight; } }catch(_){}
         }
       }
-      if(acc){ history.push({role:'assistant',content:acc}); } else { bot.remove(); addMsg('没有返回内容，请重试','err'); }
+      if(acc){ history.push({role:'assistant',content:acc}); saveTurn(q,acc); } else { bot.remove(); addMsg('没有返回内容，请重试','err'); }
     }catch(e){ try{tip.remove();}catch(_){} addMsg('网络异常，请稍后重试','err'); }
     busy=false; sendBtn.disabled=false; textEl.focus();
   }
@@ -1763,6 +1996,8 @@ else { clearLiveBoard('demo'); }
   textEl.addEventListener('input',()=>{ textEl.style.height='auto'; textEl.style.height=Math.min(textEl.scrollHeight,96)+'px'; updCount(); });
   if(chips){ chips.querySelectorAll('button').forEach(b=>b.onclick=()=>ask(b.textContent)); }
   if(wxEl){ wxEl.onclick=()=>copyWeixin(wxEl); }
+  if(clearBtn){ clearBtn.onclick=()=>{ if(saved.length && confirm('确定清空本机保存的问答记录吗？此操作不可恢复。')) clearHistory(); else if(!saved.length) clearHistory(); }; }
+  restoreSaved();                                  // 启动时把本机历史渲染出来（仅展示）
 })();
 /* 禁止 iOS 双指缩放（user-scalable 在 iOS Safari 会被忽略，用手势拦截兜底） */
 document.addEventListener('gesturestart', e=>e.preventDefault());

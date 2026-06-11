@@ -150,7 +150,7 @@ const CORS = {
   'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
   'Content-Type': 'application/json; charset=utf-8'
 };
-const ALLOW = /^\/(fixtures|teams|players|injuries|standings|leagues|coachs|transfers|trophies|sidelined|venues|status)\b/;
+const ALLOW = /^\/(fixtures|teams|players|injuries|standings|leagues|coachs|transfers|trophies|sidelined|venues|status|odds)\b/;
 
 const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') { res.writeHead(204, CORS); return res.end(); }

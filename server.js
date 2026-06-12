@@ -216,7 +216,7 @@ const server = http.createServer(async (req, res) => {
     return res.end(JSON.stringify(readArchive()));
   }
 
-  // 锁定赛前预测：首发齐后由前端上报，先到先得(write-once) + 校验该场仍"未开赛"，杜绝赛后补写
+  // 锁定赛前预测：两段式（prelim 预备 / final 含首发）。未开赛期间 prelim 可被 final 升级一次；开赛后一律拒写
   if (u.pathname === '/predict/lock') {
     if (req.method !== 'POST') { res.writeHead(405, CORS); return res.end(JSON.stringify({ ok: false, err: 'method' })); }
     let body = '';
@@ -226,15 +226,35 @@ const server = http.createServer(async (req, res) => {
         const d = JSON.parse(body || '{}');
         const fid = String(d.fixtureId == null ? '' : d.fixtureId).replace(/[^0-9]/g, '');
         if (!fid || !d.o || !d.s) { res.writeHead(400, CORS); return res.end(JSON.stringify({ ok: false, err: 'bad_input' })); }
+        const stage = d.stage === 'final' ? 'final' : 'prelim';
         const arch = readArchive();
-        if (arch[fid]) { res.writeHead(200, CORS); return res.end(JSON.stringify({ ok: true, already: true })); }  // 已锁定，先到先得
+        const ex = arch[fid];
+        // 已是 final，或本次只是 prelim 而已存在记录 → 不动（保留更优/更早的）
+        if (ex && (ex.stage === 'final' || stage === 'prelim')) { res.writeHead(200, CORS); return res.end(JSON.stringify({ ok: true, already: true })); }
+        // 写入/升级前，校验该场仍"未开赛"
         let ns = false;
         try { const j = JSON.parse(await getData('/fixtures?id=' + fid)); const st = j && j.response && j.response[0] && j.response[0].fixture && j.response[0].fixture.status && j.response[0].fixture.status.short; ns = (st === 'NS'); } catch (e) {}
         if (!ns) { res.writeHead(409, CORS); return res.end(JSON.stringify({ ok: false, err: 'not_ns' })); }  // 已开赛/查不到 → 不接受
-        arch[fid] = { o: d.o, s: d.s, h: d.h || '', a: d.a || '', probs: d.probs || null, scores: d.scores || null, at: Date.now() };
+        arch[fid] = { o: d.o, s: d.s, h: d.h || '', a: d.a || '', probs: d.probs || null, scores: d.scores || null, stage, at: Date.now() };
         const okw = writeArchive(arch);
-        res.writeHead(okw ? 200 : 500, CORS); return res.end(JSON.stringify({ ok: okw }));
+        res.writeHead(okw ? 200 : 500, CORS); return res.end(JSON.stringify({ ok: okw, stage }));
       } catch (e) { res.writeHead(500, CORS); return res.end(JSON.stringify({ ok: false, err: 'server' })); }
+    });
+    return;
+  }
+
+  // 清空线上预测存档（管理用）：需 body {confirm:'CLEAR'}，把磁盘存档重置为 {}
+  if (u.pathname === '/predict/clear') {
+    if (req.method !== 'POST') { res.writeHead(405, CORS); return res.end(JSON.stringify({ ok: false, err: 'method' })); }
+    let body = '';
+    req.on('data', c => { body += c; if (body.length > 2000) req.destroy(); });
+    req.on('end', () => {
+      try {
+        const d = JSON.parse(body || '{}');
+        if (d.confirm !== 'CLEAR') { res.writeHead(400, CORS); return res.end(JSON.stringify({ ok: false, err: 'need_confirm' })); }
+        const okw = writeArchive({});
+        res.writeHead(okw ? 200 : 500, CORS); return res.end(JSON.stringify({ ok: okw, cleared: true }));
+      } catch (e) { res.writeHead(500, CORS); return res.end(JSON.stringify({ ok: false })); }
     });
     return;
   }

@@ -51,6 +51,18 @@ if (!API_KEY) console.warn('⚠ 未设置环境变量 API_KEY，将无法调用�
 
 /* ---------- 可选：托管网页本体（同目录有 html 文件就一并提供）---------- */
 const fs = require('fs');
+/* ---------- 预测存档（持久磁盘）---------- */
+const DATA_DIR = process.env.DATA_DIR || '/var/data';      // Render 持久磁盘挂载路径（可用环境变量覆盖）
+const ARCHIVE_PATH = DATA_DIR + '/predictions.json';
+function readArchive() {
+  try { if (fs.existsSync(ARCHIVE_PATH)) return JSON.parse(fs.readFileSync(ARCHIVE_PATH, 'utf8') || '{}'); } catch (e) {}
+  try { const seed = __dirname + '/predictions.json'; if (fs.existsSync(seed)) return JSON.parse(fs.readFileSync(seed, 'utf8') || '{}'); } catch (e) {}  // 磁盘无 → 用仓库种子
+  return {};
+}
+function writeArchive(obj) {
+  try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(ARCHIVE_PATH, JSON.stringify(obj)); return true; }
+  catch (e) { console.warn('写预测存档失败:', e.message); return false; }
+}
 let PAGE = null, PAGE_NAME = null;
 for (const f of ['index.html', 'worldcup_predict_live.html', 'app.html']) {
   try { const fp = __dirname + '/' + f; if (fs.existsSync(fp)) { PAGE = fs.readFileSync(fp); PAGE_NAME = f; break; } } catch (e) {}
@@ -198,12 +210,33 @@ const server = http.createServer(async (req, res) => {
     } catch (e) {}
   }
 
-  // 预测存档：赛前锁定的预测结果（用于"预测战绩/准确率"页）。不存在则返回空对象
+  // 预测存档：赛前锁定的预测（用于"预测战绩/准确率"页）。从持久磁盘读取，无则回退仓库种子/空对象
   if (req.method === 'GET' && u.pathname === '/predictions.json') {
-    let body = '{}';
-    try { const fp = __dirname + '/predictions.json'; if (fs.existsSync(fp)) body = fs.readFileSync(fp, 'utf8') || '{}'; } catch (e) {}
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*' });
-    return res.end(body);
+    return res.end(JSON.stringify(readArchive()));
+  }
+
+  // 锁定赛前预测：首发齐后由前端上报，先到先得(write-once) + 校验该场仍"未开赛"，杜绝赛后补写
+  if (u.pathname === '/predict/lock') {
+    if (req.method !== 'POST') { res.writeHead(405, CORS); return res.end(JSON.stringify({ ok: false, err: 'method' })); }
+    let body = '';
+    req.on('data', c => { body += c; if (body.length > 20000) req.destroy(); });
+    req.on('end', async () => {
+      try {
+        const d = JSON.parse(body || '{}');
+        const fid = String(d.fixtureId == null ? '' : d.fixtureId).replace(/[^0-9]/g, '');
+        if (!fid || !d.o || !d.s) { res.writeHead(400, CORS); return res.end(JSON.stringify({ ok: false, err: 'bad_input' })); }
+        const arch = readArchive();
+        if (arch[fid]) { res.writeHead(200, CORS); return res.end(JSON.stringify({ ok: true, already: true })); }  // 已锁定，先到先得
+        let ns = false;
+        try { const j = JSON.parse(await getData('/fixtures?id=' + fid)); const st = j && j.response && j.response[0] && j.response[0].fixture && j.response[0].fixture.status && j.response[0].fixture.status.short; ns = (st === 'NS'); } catch (e) {}
+        if (!ns) { res.writeHead(409, CORS); return res.end(JSON.stringify({ ok: false, err: 'not_ns' })); }  // 已开赛/查不到 → 不接受
+        arch[fid] = { o: d.o, s: d.s, h: d.h || '', a: d.a || '', probs: d.probs || null, scores: d.scores || null, at: Date.now() };
+        const okw = writeArchive(arch);
+        res.writeHead(okw ? 200 : 500, CORS); return res.end(JSON.stringify({ ok: okw }));
+      } catch (e) { res.writeHead(500, CORS); return res.end(JSON.stringify({ ok: false, err: 'server' })); }
+    });
+    return;
   }
 
   // AI 助手：把对话转发给火山方舟·豆包（API key 仅存于服务器端）

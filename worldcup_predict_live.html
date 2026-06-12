@@ -1035,7 +1035,7 @@ const autoBase = (typeof location!=='undefined' && /^https?:$/.test(location.pro
 const SERVER_BASE = (CONFIG.SERVER_BASE && CONFIG.SERVER_BASE.length) ? CONFIG.SERVER_BASE : (CONFIG.API_KEY.length ? '' : autoBase);
 const USE_SERVER = CONFIG.USE_LIVE && SERVER_BASE.length > 0 && CONFIG.API_KEY.length === 0;   // 走共享代理(含自动同源)
 const LIVE = CONFIG.USE_LIVE && (USE_SERVER || CONFIG.API_KEY.length > 0);                      // 实时(代理或直连)
-try{ console.log('[胜率预测] BUILD=2026-06-r10 | USE_LIVE='+CONFIG.USE_LIVE+' | origin='+(typeof location!=='undefined'?location.origin:'-')+' | SERVER_BASE='+SERVER_BASE+' | USE_SERVER='+USE_SERVER+' | LIVE='+LIVE); }catch(_){}
+try{ console.log('[胜率预测] BUILD=2026-06-r11 | USE_LIVE='+CONFIG.USE_LIVE+' | origin='+(typeof location!=='undefined'?location.origin:'-')+' | SERVER_BASE='+SERVER_BASE+' | USE_SERVER='+USE_SERVER+' | LIVE='+LIVE); }catch(_){}
 let liveScoreList = null;           // 实时模型算出的比分榜，供 topScores 使用
 
 /* —— 泊松 / Dixon-Coles 简化预测引擎（与第二轮讨论的模型一致）—— */

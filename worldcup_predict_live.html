@@ -137,6 +137,7 @@ canvas{width:100%; height:128px; display:block}
 .fix .row{display:flex; align-items:center; gap:9px; font-size:14px}
 .fix .row .fl{font-size:18px}
 .fix .row .sc-mini{margin-left:auto; font-family:var(--num); font-size:17px; color:var(--muted)}
+.fix .row .sc-mini:empty{display:none}
 .fix .row.win .sc-mini, .fix .row.win{color:var(--txt)}
 .fix .vn{font-size:10px; color:var(--faint); margin-top:1px; letter-spacing:.02em}
 .fix .meta{text-align:right; display:flex; flex-direction:column; gap:6px; align-items:flex-end}
@@ -363,6 +364,7 @@ canvas{width:100%; height:128px; display:block}
 .scrow .rk{text-align:center;color:var(--muted)} .scrow .g{font-weight:700;color:var(--a)}
 .scrow .nm{display:flex;align-items:center;gap:7px;overflow:hidden;white-space:nowrap}
 .scrow .nm small{color:var(--faint);font-size:11px}
+.scrow .scava{width:22px;height:22px;border-radius:50%;background:rgba(255,255,255,.08);display:inline-flex;align-items:center;justify-content:center;font-size:12px;flex:none}
 .st-empty{color:var(--faint); font-size:13px; text-align:center; padding:30px 10px; line-height:1.7}
 /* ---- 24小时开赛倒计时 ---- */
 .pill.cd{background:rgba(77,168,255,.14); color:var(--b); border:1px solid rgba(77,168,255,.4); font-variant-numeric:tabular-nums; white-space:nowrap}
@@ -382,6 +384,24 @@ canvas{width:100%; height:128px; display:block}
 .ucard .ucd{display:inline-block; font-size:13px; font-weight:700; font-variant-numeric:tabular-nums; color:var(--b); background:rgba(77,168,255,.12); border:1px solid rgba(77,168,255,.4); border-radius:8px; padding:3px 9px; white-space:nowrap}
 .ucard .ucd.cd-soon{color:var(--warn); background:rgba(255,178,62,.14); border-color:rgba(255,178,62,.5)}
 .ucard .ucd.cd-now{color:var(--live); background:rgba(255,77,77,.16); border-color:rgba(255,77,77,.55); animation:cdpulse 1s infinite}
+/* ---- 预测战绩 / 准确率 ---- */
+.predacc{background:linear-gradient(90deg,rgba(198,255,68,.12),rgba(77,168,255,.10)); border:1px solid rgba(198,255,68,.3); border-radius:12px; padding:10px 14px; font-size:13px; color:var(--txt); display:flex; align-items:center; gap:6px; cursor:pointer; margin-bottom:12px}
+.predacc b{color:var(--a); font-family:var(--num)}
+.predacc b.b2{color:var(--b)}
+.predacc .pa-go{margin-left:auto; color:var(--faint); font-size:12px}
+.acc-sum{display:flex; gap:10px; margin:2px 0 12px}
+.acc-card{flex:1; background:var(--surface); border:1px solid rgba(255,255,255,.08); border-top:2px solid rgba(198,255,68,.55); border-radius:14px; padding:14px; text-align:center}
+.acc-card.score{border-top-color:rgba(77,168,255,.55)}
+.acc-card .acc-n{font-family:var(--num); font-size:30px; font-weight:800; color:var(--a); line-height:1}
+.acc-card.score .acc-n{color:var(--b)}
+.acc-card .acc-l{font-size:12px; color:var(--muted); margin-top:6px}
+.acc-card .acc-s{font-size:11px; color:var(--faint); margin-top:3px}
+.acc-row{display:flex; align-items:center; gap:10px; background:var(--surface); border:1px solid rgba(255,255,255,.06); border-radius:12px; padding:10px 12px; margin-bottom:8px}
+.acc-row .acc-m{flex:1; min-width:0}
+.acc-row .acc-t{font-size:13px; color:var(--txt); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.acc-row .acc-p{font-size:11px; color:var(--faint); margin-top:3px}
+.acc-row .acc-mk{display:flex; flex-direction:column; gap:3px; flex:none; font-size:11px; text-align:right}
+.acc-row .acc-mk .ok{color:var(--a)} .acc-row .acc-mk .no{color:var(--faint)}
 </style>
 </head>
 <body>
@@ -409,6 +429,7 @@ canvas{width:100%; height:128px; display:block}
           </div>
 
           <div id="upcoming24" class="up24"></div>
+          <div id="predAccBar"></div>
 
           <div class="board">
             <div class="comp">
@@ -714,6 +735,11 @@ function show(v){
   document.getElementById(views[v]).classList.add('on');
   if(v==='live'){ requestAnimationFrame(drawTrend); if(typeof renderUpcoming24==='function') renderUpcoming24(); }
   if(v==='standings') renderStandings();
+  if(v==='sched' && LIVE && typeof renderScheduleLive==='function'){
+    if(!document.querySelector('#v-sched .fix[data-fid]')) renderScheduleLive();   // 尚未渲染 → 先渲染
+    else { schedLiveMerge(); schedFullReconcile(); }                                // 已渲染 → 原地刷新
+    startSchedPollers();
+  }
 }
 tabs.forEach(t=>t.onclick=()=>show(t.dataset.v));
 document.querySelectorAll('[data-go="live"]').forEach(f=>f.onclick=()=>show('live'));
@@ -994,8 +1020,8 @@ const CONFIG = {
   SERVER_BASE: '',                  // ★分发推荐：填你的代理地址(如 https://xxx.onrender.com)；填了就走代理，客户端不需要 key
   API_KEY:  '',                     // 仅"直连官方"(单人测试)时需要；走代理时留空
   API_BASE: 'https://v3.football.api-sports.io',
-  POLL_MS:  30000,                  // 实时刷新间隔（毫秒）
-  PRED_MS:  300000,                 // 实时预测重算间隔：5 分钟（进球时也会立即重算）
+  POLL_MS:  15000,                  // 实时刷新间隔（比分/分钟）：15 秒
+  PRED_MS:  120000,                 // 技术统计/预测重算间隔：2 分钟（进球时也会立即重算）
   LEAGUE_ID: 1,                     // 1 = FIFA World Cup
   SEASON:   2026,
   HOME_ADV: 1.15,                   // 主场进攻系数
@@ -1008,7 +1034,7 @@ const autoBase = (typeof location!=='undefined' && /^https?:$/.test(location.pro
 const SERVER_BASE = (CONFIG.SERVER_BASE && CONFIG.SERVER_BASE.length) ? CONFIG.SERVER_BASE : (CONFIG.API_KEY.length ? '' : autoBase);
 const USE_SERVER = CONFIG.USE_LIVE && SERVER_BASE.length > 0 && CONFIG.API_KEY.length === 0;   // 走共享代理(含自动同源)
 const LIVE = CONFIG.USE_LIVE && (USE_SERVER || CONFIG.API_KEY.length > 0);                      // 实时(代理或直连)
-try{ console.log('[胜率预测] BUILD=2026-06-r7 | USE_LIVE='+CONFIG.USE_LIVE+' | origin='+(typeof location!=='undefined'?location.origin:'-')+' | SERVER_BASE='+SERVER_BASE+' | USE_SERVER='+USE_SERVER+' | LIVE='+LIVE); }catch(_){}
+try{ console.log('[胜率预测] BUILD=2026-06-r9 | USE_LIVE='+CONFIG.USE_LIVE+' | origin='+(typeof location!=='undefined'?location.origin:'-')+' | SERVER_BASE='+SERVER_BASE+' | USE_SERVER='+USE_SERVER+' | LIVE='+LIVE); }catch(_){}
 let liveScoreList = null;           // 实时模型算出的比分榜，供 topScores 使用
 
 /* —— 泊松 / Dixon-Coles 简化预测引擎（与第二轮讨论的模型一致）—— */
@@ -1208,10 +1234,20 @@ async function teamStrength(id, name){
   return {attack:s.att, defense:s.def};   // schedule/topScores 用
 }
 function pickStat(team,type){const o=team.statistics.find(x=>x.type===type);return o?o.value:null;}
+function zeroStatDefs(){
+  return [
+    {nm:'控球率', a:0, b:0, suf:'%'},
+    {nm:'射门', a:0, b:0},
+    {nm:'射正', a:0, b:0},
+    {nm:'预期进球 xG', a:0, b:0, dec:1},
+    {nm:'角球', a:0, b:0},
+    {nm:'传球成功', a:0, b:0, suf:'%'},
+  ];
+}
 async function liveStats(fixtureId){
   try{
     const st=await api(`/fixtures/statistics?fixture=${fixtureId}`);
-    if(!st||st.length<2) return;
+    if(!st||st.length<2){ statDefs=zeroStatDefs(); return; }   // 开哨初期接口暂无统计 → 归零，绝不显示演示值
     const H=st[0],A=st[1], num=v=>parseFloat(String(v==null?0:v).replace('%',''))||0;
     statDefs=[
       {nm:'控球率', a:num(pickStat(H,'Ball Possession')), b:num(pickStat(A,'Ball Possession')), suf:'%'},
@@ -1221,7 +1257,7 @@ async function liveStats(fixtureId){
       {nm:'角球', a:num(pickStat(H,'Corner Kicks')), b:num(pickStat(A,'Corner Kicks'))},
       {nm:'传球成功', a:num(pickStat(H,'Passes %')), b:num(pickStat(A,'Passes %')), suf:'%'},
     ];
-  }catch(e){}
+  }catch(e){ statDefs=zeroStatDefs(); }
 }
 
 /* ===================== 赛前对阵 · 重要度权重 · 伤停折减 ===================== */
@@ -1662,21 +1698,165 @@ function bestThirds(groups){
   thirds.sort((a,b)=> b.pts-a.pts || b.gd-a.gd || b.gf-a.gf);
   return {ranked:thirds, qualifiedIds:new Set(thirds.slice(0,8).map(t=>t.id))};
 }
+// 射手榜自统计：官方榜为空时，从各场进球事件累加（已结束比赛缓存增量）
+let selfScorers=null, selfScorersBusy=false; const _evCache={};
+async function computeScorersFromEvents(){
+  const fxs=await api(`/fixtures?league=${CONFIG.LEAGUE_ID}&season=${CONFIG.SEASON}`).catch(()=>null);
+  const DONE=['FT','AET','PEN'];
+  const finished=(fxs||[]).filter(f=>DONE.includes(f.fixture.status.short));
+  const need=finished.filter(f=>!_evCache[f.fixture.id]);
+  await Promise.all(need.map(async f=>{
+    try{
+      const ev=await api(`/fixtures/events?fixture=${f.fixture.id}`);
+      const goals=[];
+      (ev||[]).forEach(e=>{
+        if((e.type||'')!=='Goal') return;
+        const d=e.detail||'';
+        if(d==='Missed Penalty' || d==='Own Goal') return;       // 射失点球/乌龙不计给打进者
+        const el=e.time&&e.time.elapsed;
+        if(el!=null && el>120) return;                            // 点球大战(>120')不算个人进球
+        if(e.player&&e.player.id) goals.push({id:e.player.id, name:e.player.name, team:(e.team&&e.team.name)||''});
+      });
+      _evCache[f.fixture.id]=goals;
+    }catch(_){ _evCache[f.fixture.id]=[]; }
+  }));
+  const tally={};
+  finished.forEach(f=>(_evCache[f.fixture.id]||[]).forEach(g=>{
+    if(!tally[g.id]) tally[g.id]={name:g.name, team:g.team, goals:0};
+    tally[g.id].goals++;
+  }));
+  return Object.values(tally).sort((a,b)=> b.goals-a.goals).slice(0,30);
+}
+async function ensureSelfScorers(){
+  if(selfScorersBusy) return;
+  selfScorersBusy=true; if(stTab==='scorers') stPaint();
+  await new Promise(r=>setTimeout(r,50));
+  try{ selfScorers=await computeScorersFromEvents(); }catch(e){ selfScorers=[]; }
+  selfScorersBusy=false; if(stTab==='scorers') stPaint();
+}
+/* ===== 预测战绩：赛前锁定预测 vs 真实结果，算准确率 ===== */
+let accData=null, accBusy=false, _archCache=null;
+async function loadPredArchive(){
+  if(_archCache) return _archCache;
+  try{ const r=await fetch((SERVER_BASE||'')+'/predictions.json',{cache:'no-store'}); _archCache=await r.json()||{}; }
+  catch(e){ _archCache={}; }
+  return _archCache;
+}
+// 用本站模型对一场比赛给出 胜平负 + 最可能比分（与赛前对阵同口径：含主场系数）
+async function predictFixtureModel(hId,hName,aId,aName){
+  const [bH,bA]=await Promise.all([coreStrength(hId,hName),coreStrength(aId,aName)]);
+  const lH=Math.max(0.2, CONFIG.LEAGUE_AVG*bH.att/Math.max(0.3,bA.def)*CONFIG.HOME_ADV);
+  const lA=Math.max(0.2, CONFIG.LEAGUE_AVG*bA.att/Math.max(0.3,bH.def)/CONFIG.HOME_ADV);
+  const g=CONFIG.MAX_GOALS; let pH=0,pD=0,pA=0,best=-1,bi=0,bj=0;
+  for(let i=0;i<=g;i++)for(let j=0;j<=g;j++){ const p=pois(i,lH)*pois(j,lA); if(i>j)pH+=p; else if(i===j)pD+=p; else pA+=p; if(p>best){best=p;bi=i;bj=j;} }
+  const o = (pH>=pD&&pH>=pA)?'H':(pA>=pD?'A':'D');
+  return { o, s: bi+'-'+bj };
+}
+// 生成器：只为"未开赛且未归档"的比赛预测并合并存档（诚实：已开赛比赛不事后补测）
+async function genPredictions(){
+  const arch=await loadPredArchive();
+  const fxs=await api(`/fixtures?league=${CONFIG.LEAGUE_ID}&season=${CONFIG.SEASON}`);
+  const ns=(fxs||[]).filter(f=>f.fixture.status.short==='NS' && !arch[String(f.fixture.id)]);
+  const out=Object.assign({}, arch);
+  for(const f of ns){
+    try{
+      const pr=await predictFixtureModel(f.teams.home.id,f.teams.home.name,f.teams.away.id,f.teams.away.name);
+      out[String(f.fixture.id)]={o:pr.o, s:pr.s, at:Date.now(), h:f.teams.home.name, a:f.teams.away.name};
+    }catch(e){}
+  }
+  return out;
+}
+async function computeAccuracy(){
+  const arch=await loadPredArchive();
+  const ids=Object.keys(arch);
+  if(!ids.length) return {settled:0,oCorrect:0,sCorrect:0,rows:[]};
+  const fxs=await api(`/fixtures?league=${CONFIG.LEAGUE_ID}&season=${CONFIG.SEASON}`).catch(()=>null);
+  const byId={}; (fxs||[]).forEach(f=>byId[String(f.fixture.id)]=f);
+  const DONE=['FT','AET','PEN']; let settled=0,oC=0,sC=0; const rows=[];
+  ids.forEach(id=>{
+    const f=byId[id], pred=arch[id]; if(!f||!pred) return;
+    if(!DONE.includes(f.fixture.status.short)) return;
+    const ft=(f.score&&f.score.fulltime)||{};
+    const ah=(ft.home!=null?ft.home:f.goals.home), aa=(ft.away!=null?ft.away:f.goals.away);
+    if(ah==null||aa==null) return;
+    const actO=ah>aa?'H':(ah<aa?'A':'D'), actS=ah+'-'+aa;
+    const oOK=pred.o===actO, sOK=pred.s===actS;
+    settled++; if(oOK)oC++; if(sOK)sC++;
+    rows.push({h:pred.h||f.teams.home.name, a:pred.a||f.teams.away.name, predO:pred.o, predS:pred.s, actO, actS, oOK, sOK, date:f.fixture.date});
+  });
+  rows.sort((a,b)=>new Date(b.date)-new Date(a.date));
+  return {settled, oCorrect:oC, sCorrect:sC, rows};
+}
+async function ensureAccuracy(){
+  if(accBusy) return;
+  accBusy=true; if(stTab==='accuracy') stPaint();
+  try{ accData=await computeAccuracy(); }catch(e){ accData={settled:0,oCorrect:0,sCorrect:0,rows:[]}; }
+  accBusy=false; if(stTab==='accuracy') stPaint(); renderPredAccBar();
+}
+function renderPredAccBar(){
+  const bar=document.getElementById('predAccBar'); if(!bar) return;
+  if(!LIVE){ bar.innerHTML=''; return; }
+  if(!accData){ ensureAccuracy(); return; }
+  if(!accData.settled){ bar.innerHTML=''; return; }
+  const o=Math.round(accData.oCorrect/accData.settled*100), s=Math.round(accData.sCorrect/accData.settled*100);
+  bar.innerHTML=`<div class="predacc" onclick="show('standings');stSwitch('accuracy')">赛前预测准确率 · 胜平负 <b>${o}%</b> · 比分 <b class="b2">${s}%</b><span class="pa-go">查看 ›</span></div>`;
+}
+// 生成器 UI（仅部署者用：打开 #genpred）
+async function initGenPred(){
+  document.body.innerHTML='<div style="padding:18px;font-family:system-ui;color:#eaeff6;background:#070a10;min-height:100vh"><h3>预测存档生成器</h3><p style="color:#94a1b8;font-size:13px;line-height:1.7">点下方按钮，用线上模型为"未开赛且未归档"的比赛生成赛前预测，把结果整段复制覆盖到仓库的 <b>predictions.json</b> 再部署即可。已开赛/已归档的比赛不会改动。</p><button id="gpRun" style="padding:10px 16px;border-radius:10px;background:#c6ff44;border:none;font-weight:700">生成本轮预测</button> <span id="gpMsg" style="color:#94a1b8"></span><textarea id="gpOut" style="width:100%;height:60vh;margin-top:12px;background:#111824;color:#eaeff6;border:1px solid #2a3550;border-radius:10px;padding:10px;font-family:monospace;font-size:12px"></textarea></div>';
+  document.getElementById('gpRun').onclick=async()=>{
+    document.getElementById('gpMsg').textContent='生成中…';
+    try{ const out=await genPredictions(); document.getElementById('gpOut').value=JSON.stringify(out,null,2); document.getElementById('gpMsg').textContent='完成，共 '+Object.keys(out).length+' 场存档'; }
+    catch(e){ document.getElementById('gpMsg').textContent='失败：'+e.message; }
+  };
+}
+
 function stPaint(){
   const body=document.getElementById('stBody'), sub=document.getElementById('stSub');
-  const {groups, scorers}=stCache;
+  const {groups, scorers}=stCache||{groups:[],scorers:[]};
   const tabs=`<div class="st-tabs">
     <button class="${stTab==='groups'?'on':''}" onclick="stSwitch('groups')">小组 / 出线</button>
-    <button class="${stTab==='scorers'?'on':''}" onclick="stSwitch('scorers')">射手榜</button></div>`;
+    <button class="${stTab==='scorers'?'on':''}" onclick="stSwitch('scorers')">射手榜</button>
+    <button class="${stTab==='accuracy'?'on':''}" onclick="stSwitch('accuracy')">预测战绩</button></div>`;
+  if(stTab==='accuracy'){
+    sub.textContent='赛前预测战绩 · 准确率';
+    if(accBusy && !accData){ body.innerHTML=tabs+'<div class="st-empty">正在统计预测战绩…</div>'; return; }
+    if(!accData){ body.innerHTML=tabs+'<div class="st-empty">加载中…</div>'; ensureAccuracy(); return; }
+    if(!accData.settled){ body.innerHTML=tabs+'<div class="st-empty">暂无已结算的赛前预测<br><span style="font-size:11px;line-height:1.8">预测须在开赛前锁定，已踢过的比赛不会事后补测；<br>新一轮赛前预测结算后这里会显示准确率。</span></div>'; return; }
+    const oPct=Math.round(accData.oCorrect/accData.settled*100), sPct=Math.round(accData.sCorrect/accData.settled*100);
+    const oCN={H:'主胜',D:'平局',A:'客胜'};
+    let html=tabs;
+    html+=`<div class="acc-sum"><div class="acc-card"><div class="acc-n">${oPct}%</div><div class="acc-l">胜平负准确率</div><div class="acc-s">${accData.oCorrect}/${accData.settled} 场</div></div><div class="acc-card score"><div class="acc-n">${sPct}%</div><div class="acc-l">比分准确率</div><div class="acc-s">${accData.sCorrect}/${accData.settled} 场</div></div></div>`;
+    html+=`<div class="st-note">仅统计「开赛前已锁定预测」且已结束的比赛（共 ${accData.settled} 场）。胜平负与比分均按全场 90 分钟判定；精确命中比分本身较难，比分准确率偏低属正常。</div>`;
+    accData.rows.forEach(r=>{
+      html+=`<div class="acc-row"><div class="acc-m"><div class="acc-t">${r.h} vs ${r.a}</div><div class="acc-p">预测 ${oCN[r.predO]} ${r.predS} · 实际 ${oCN[r.actO]} ${r.actS}</div></div><div class="acc-mk"><span class="${r.oOK?'ok':'no'}">胜平负 ${r.oOK?'✓':'✗'}</span><span class="${r.sOK?'ok':'no'}">比分 ${r.sOK?'✓':'✗'}</span></div></div>`;
+    });
+    body.innerHTML=html;
+    return;
+  }
   if(stTab==='scorers'){
     sub.textContent='射手榜 · 进球数排名';
-    let rows='';
-    (scorers||[]).slice(0,30).forEach((s,i)=>{
-      const p=s.player||{}, st=(s.statistics&&s.statistics[0])||{};
-      const goals=(st.goals&&st.goals.total)||0, team=(st.team&&st.team.name)||'';
-      rows+=`<div class="scrow"><div class="rk">${i+1}</div><div class="nm">${p.photo?`<img src="${p.photo}" style="width:22px;height:22px;border-radius:50%;object-fit:cover">`:''}<span>${p.name||'—'} <small>${team}</small></span></div><div class="g">${goals} 球</div></div>`;
-    });
-    body.innerHTML=tabs+(rows?`<div style="background:var(--surface);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:6px 12px">${rows}</div>`:'<div class="st-empty">射手榜暂无数据<br><span style="font-size:11px">开赛进球后更新</span></div>');
+    const official=(scorers||[]);
+    if(official.length){                              // 官方有数据 → 用官方(含头像)
+      let rows='';
+      official.slice(0,30).forEach((s,i)=>{
+        const p=s.player||{}, st=(s.statistics&&s.statistics[0])||{};
+        const goals=(st.goals&&st.goals.total)||0, team=(st.team&&st.team.name)||'';
+        rows+=`<div class="scrow"><div class="rk">${i+1}</div><div class="nm">${p.photo?`<img src="${p.photo}" style="width:22px;height:22px;border-radius:50%;object-fit:cover">`:'<span class="scava">⚽</span>'}<span>${p.name||'—'} <small>${team}</small></span></div><div class="g">${goals} 球</div></div>`;
+      });
+      body.innerHTML=tabs+`<div style="background:var(--surface);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:6px 12px">${rows}</div>`;
+      return;
+    }
+    if(selfScorers && selfScorers.length){            // 官方为空 → 用自统计(占位头像)
+      let rows='';
+      selfScorers.forEach((s,i)=>{ rows+=`<div class="scrow"><div class="rk">${i+1}</div><div class="nm"><span class="scava">⚽</span><span>${s.name} <small>${s.team}</small></span></div><div class="g">${s.goals} 球</div></div>`; });
+      body.innerHTML=tabs+`<div style="background:var(--surface);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:6px 12px">${rows}</div><div class="st-note">官方射手榜暂未更新，以上为本站根据各场进球事件自行统计（暂无球员头像）。</div>`;
+      return;
+    }
+    if(selfScorersBusy){ body.innerHTML=tabs+'<div class="st-empty">正在统计射手榜…</div>'; return; }
+    if(selfScorers && !selfScorers.length){ body.innerHTML=tabs+'<div class="st-empty">射手榜暂无数据<br><span style="font-size:11px">开赛进球后更新</span></div>'; return; }
+    body.innerHTML=tabs+'<div class="st-empty">正在统计射手榜…</div>';
+    ensureSelfScorers();
     return;
   }
   sub.textContent='小组排名 · 出线形势';
@@ -1701,12 +1881,20 @@ function stPaint(){
     g.forEach(t=>{
       let badge='', cls='';
       if(gStarted){                                   // 未开赛 → 不显示任何出线状态
-        if(t.rank<=2){ cls='q1'; badge = gDone ? '<span class="qbadge qb-out">出线</span>' : '<span class="qbadge qb-mid">暂列前二</span>'; }
-        else if(t.rank===3){ cls='q3';
-          badge = allDone
+        if(gDone){                                    // 小组踢完 → 确定结论
+          if(t.rank<=2){ cls='q1'; badge='<span class="qbadge qb-out">出线</span>'; }
+          else if(t.rank===3){ cls='q3'; badge = allDone
             ? (qualifiedIds.has(t.id) ? '<span class="qbadge qb-out">出线</span>' : '<span class="qbadge qb-elim">淘汰</span>')
             : (qualifiedIds.has(t.id) ? '<span class="qbadge qb-out">暂列出线</span>' : '<span class="qbadge qb-mid">暂列第三</span>'); }
-        else { badge = gDone ? '<span class="qbadge qb-elim">淘汰</span>' : '<span class="qbadge qb-elim">暂列末位</span>'; }
+          else { badge='<span class="qbadge qb-elim">淘汰</span>'; }
+        } else {                                      // 进行中 → 按实时名次的"暂列"序号
+          if(t.rank===1){ cls='q1'; badge='<span class="qbadge qb-out">暂列第一</span>'; }
+          else if(t.rank===2){ cls='q1'; badge='<span class="qbadge qb-out">暂列第二</span>'; }
+          else if(t.rank===3){ cls='q3'; badge = qualifiedIds.has(t.id)
+            ? '<span class="qbadge qb-out">暂列第三</span>'      // 当前进最佳8 → 绿
+            : '<span class="qbadge qb-mid">暂列第三</span>'; }   // 否则 → 琥珀
+          else { badge='<span class="qbadge qb-elim">暂列末位</span>'; }
+        }
       }
       let probLine='';
       if(qualProb && qualProb[t.id]!=null){
@@ -1858,6 +2046,67 @@ async function ensureQualProb(){
   qualBusy=false; if(stTab==='groups') stPaint();
 }
 
+/* ===== 赛程实时化：状态判定 + 按行原地更新 + 8秒并入/30秒全量对账 ===== */
+const SCHED_LIVE=['1H','2H','HT','ET','BT','P','LIVE','INT'], SCHED_DONE=['FT','AET','PEN'];
+function schedCat(f, dt){
+  const st=f.fixture.status.short;
+  if(SCHED_LIVE.includes(st)) return 'live';
+  if(SCHED_DONE.includes(st)) return 'done';
+  if(st==='NS'){
+    const left=dt.getTime()-Date.now();
+    if(left>0 && left<=86400000) return 'cd';      // 24h 内 → 倒计时
+    if(left<=0) return 'imminent';                 // 已过开赛点但接口仍 NS
+    return 'soon';                                 // 24h 外
+  }
+  return 'soon';                                   // 其它(改期/待定等)
+}
+function schedPillHTML(f, dt){
+  const cat=schedCat(f,dt);
+  if(cat==='live'){ const m=f.fixture.status.elapsed; return `<span class="pill live">● 进行中${m?(" "+m+"'"):''}</span>`; }
+  if(cat==='done') return '<span class="pill done">完场</span>';
+  if(cat==='cd') return `<span class="pill cd" data-cd="${dt.getTime()}">距开赛 --:--:--</span>`;
+  if(cat==='imminent') return '<span class="pill cd cd-now">即将开始</span>';
+  return '<span class="pill soon">未开始</span>';
+}
+function applySchedFixture(f){
+  const el=document.querySelector(`#v-sched .fix[data-fid="${f.fixture.id}"]`);
+  if(!el) return false;
+  const dt=new Date(f.fixture.date), cat=schedCat(f,dt);
+  const isLive=cat==='live', done=cat==='done';
+  const sH=f.goals.home, sA=f.goals.away, hasS=(sH!=null&&sA!=null);
+  const rows=el.querySelectorAll('.match > .row');
+  if(rows[0]){ const sc=rows[0].querySelector('.sc-mini'); if(sc) sc.textContent=hasS?sH:''; rows[0].classList.toggle('win', done&&hasS&&sH>sA); }
+  if(rows[1]){ const sc=rows[1].querySelector('.sc-mini'); if(sc) sc.textContent=hasS?sA:''; rows[1].classList.toggle('win', done&&hasS&&sA>sH); }
+  el.classList.toggle('is-live', isLive);
+  const meta=el.querySelector('.meta'), pill=meta&&meta.querySelector('.pill');
+  if(el.dataset.cat!==cat){                       // 状态类别变化 → 重建徽标
+    if(pill) pill.outerHTML=schedPillHTML(f,dt);
+    el.dataset.cat=cat;
+    if(cat==='cd') wireCountdowns(meta);
+  } else if(isLive && pill){                       // 进行中 → 仅更新分钟
+    const m=f.fixture.status.elapsed; pill.innerHTML=`● 进行中${m?(" "+m+"'"):''}`;
+  }
+  return true;
+}
+function schedVisible(){ const v=document.getElementById('v-sched'); return v && v.classList.contains('on'); }
+async function schedLiveMerge(){
+  if(!LIVE || !schedVisible()) return;
+  try{ const live=await api(`/fixtures?live=all&league=${CONFIG.LEAGUE_ID}&season=${CONFIG.SEASON}`); (live||[]).forEach(f=>applySchedFixture(f)); }catch(e){}
+}
+async function schedFullReconcile(){
+  if(!LIVE || !schedVisible()) return;
+  try{
+    const fxs=await api(`/fixtures?league=${CONFIG.LEAGUE_ID}&season=${CONFIG.SEASON}`);
+    let missing=false; (fxs||[]).forEach(f=>{ if(!applySchedFixture(f)) missing=true; });
+    if(missing) renderScheduleLive();             // 行不存在(首次/结构变化) → 整页重渲染
+  }catch(e){}
+}
+let _schedTimers=null;
+function startSchedPollers(){
+  if(_schedTimers) return;
+  _schedTimers=[ setInterval(schedLiveMerge, 8000), setInterval(schedFullReconcile, 30000) ];
+}
+
 async function renderScheduleLive(){
   try{
     const fxs=await api(`/fixtures?league=${CONFIG.LEAGUE_ID}&season=${CONFIG.SEASON}`);   // 全部赛程
@@ -1866,28 +2115,22 @@ async function renderScheduleLive(){
     const days={}, order=[];
     fxs.forEach(f=>{ const k=new Date(f.fixture.date).toLocaleDateString('zh-CN',{month:'long',day:'numeric',weekday:'short'});
       if(!days[k]){ days[k]=[]; order.push(k); } days[k].push(f); });
-    const LIVE_ST=['1H','2H','HT','ET','BT','P','LIVE'], DONE_ST=['FT','AET','PEN'];
     let html=`<div class="vhead"><div><h1>赛程</h1><div class="sub">2026 世界杯 · 全部 ${fxs.length} 场 · 本地时间</div></div></div>`;
     order.forEach(day=>{
       html+=`<div class="daygroup"><div class="dayhead">${day}</div>`;
       days[day].forEach(f=>{
         const dt=new Date(f.fixture.date), hhmm=dt.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',hour12:false});
-        const st=f.fixture.status.short, isLive=LIVE_ST.includes(st), done=DONE_ST.includes(st);
-        const left=dt.getTime()-Date.now(), within24=(st==='NS'&&left>0&&left<=86400000);
+        const cat=schedCat(f,dt), isLive=cat==='live', done=cat==='done';
         const sH=f.goals.home, sA=f.goals.away, hasS=(sH!=null&&sA!=null);
         const venue=(f.fixture.venue&&f.fixture.venue.name)?(f.fixture.venue.name+(f.fixture.venue.city?(' · '+f.fixture.venue.city):'')):'';
-        const pill = isLive?'<span class="pill live">● Live</span>'
-          : done?'<span class="pill done">完场</span>'
-          : within24?`<span class="pill cd" data-cd="${dt.getTime()}">距开赛 --:--:--</span>`
-          : '<span class="pill soon">未开始</span>';
-        html+=`<div class="fix${isLive?' is-live':''}" onclick="openMatchupLive(${f.fixture.id})">
+        html+=`<div class="fix${isLive?' is-live':''}" data-fid="${f.fixture.id}" data-cat="${cat}" onclick="openMatchupLive(${f.fixture.id})">
           <div class="time">${hhmm}<small>${roundCN(f.league.round)}</small></div>
           <div class="match">
-            <div class="row${done&&hasS&&sH>sA?' win':''}"><span class="fl">${mk(f.teams.home.logo)}</span>${f.teams.home.name}${hasS?`<span class="sc-mini">${sH}</span>`:''}</div>
-            <div class="row${done&&hasS&&sA>sH?' win':''}"><span class="fl">${mk(f.teams.away.logo)}</span>${f.teams.away.name}${hasS?`<span class="sc-mini">${sA}</span>`:''}</div>
+            <div class="row${done&&hasS&&sH>sA?' win':''}"><span class="fl">${mk(f.teams.home.logo)}</span>${f.teams.home.name}<span class="sc-mini">${hasS?sH:''}</span></div>
+            <div class="row${done&&hasS&&sA>sH?' win':''}"><span class="fl">${mk(f.teams.away.logo)}</span>${f.teams.away.name}<span class="sc-mini">${hasS?sA:''}</span></div>
             ${venue?`<div class="vn">${venue}</div>`:''}
           </div>
-          <div class="meta">${pill}<span class="fav" style="color:var(--a)">分析 ›</span></div>
+          <div class="meta">${schedPillHTML(f,dt)}<span class="fav" style="color:var(--a)">分析 ›</span></div>
         </div>`;
       });
       html+='</div>';
@@ -1896,8 +2139,10 @@ async function renderScheduleLive(){
     wireCountdowns(document.getElementById('v-sched'));
   }catch(e){ console.warn('实时赛程获取失败，保留演示赛程：',e); }
 }
+if(typeof location!=='undefined' && location.hash==='#genpred'){ initGenPred(); }
 if(LIVE){ renderScheduleLive(); }
 if(LIVE){ renderTeamsLive(); }
+if(LIVE){ renderPredAccBar(); }
 
 /* ===================== ② 预测校准框架（随真实结果逐步生效）===================== */
 const Calibrator=(function(){
@@ -2036,6 +2281,7 @@ async function liveTick(){
     if(!cachedLambdas || cachedFixture!==fx.fixture.id){
       const [sh,sa]=await Promise.all([teamStrength(fx.teams.home.id,fx.teams.home.name),teamStrength(fx.teams.away.id,fx.teams.away.name)]);
       cachedLambdas=lambdas(sh,sa); cachedFixture=fx.fixture.id; lastPredAt=0; domA=domB=1;
+      statDefs=zeroStatDefs();   // 新场次先清零，待 liveStats 拉到真实数据再覆盖
     }
     const scoreKey=sA+'-'+sB, now=Date.now();
     if(lastPredAt===0 || scoreKey!==lastScoreKey || (now-lastPredAt)>=CONFIG.PRED_MS){

@@ -198,6 +198,14 @@ const server = http.createServer(async (req, res) => {
     } catch (e) {}
   }
 
+  // 预测存档：赛前锁定的预测结果（用于"预测战绩/准确率"页）。不存在则返回空对象
+  if (req.method === 'GET' && u.pathname === '/predictions.json') {
+    let body = '{}';
+    try { const fp = __dirname + '/predictions.json'; if (fs.existsSync(fp)) body = fs.readFileSync(fp, 'utf8') || '{}'; } catch (e) {}
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*' });
+    return res.end(body);
+  }
+
   // AI 助手：把对话转发给火山方舟·豆包（API key 仅存于服务器端）
   if (u.pathname === '/ai/chat') {
     if (req.method !== 'POST') { res.writeHead(405, CORS); return res.end(JSON.stringify({ error: 'method not allowed' })); }

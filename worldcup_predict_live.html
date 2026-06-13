@@ -1062,7 +1062,7 @@ const autoBase = (typeof location!=='undefined' && /^https?:$/.test(location.pro
 const SERVER_BASE = (CONFIG.SERVER_BASE && CONFIG.SERVER_BASE.length) ? CONFIG.SERVER_BASE : (CONFIG.API_KEY.length ? '' : autoBase);
 const USE_SERVER = CONFIG.USE_LIVE && SERVER_BASE.length > 0 && CONFIG.API_KEY.length === 0;   // 走共享代理(含自动同源)
 const LIVE = CONFIG.USE_LIVE && (USE_SERVER || CONFIG.API_KEY.length > 0);                      // 实时(代理或直连)
-const BUILD='2026-06-r18';
+const BUILD='2026-06-r20';
 try{ console.log('[胜率预测] BUILD='+BUILD+' | USE_LIVE='+CONFIG.USE_LIVE+' | origin='+(typeof location!=='undefined'?location.origin:'-')+' | SERVER_BASE='+SERVER_BASE+' | USE_SERVER='+USE_SERVER+' | LIVE='+LIVE); }catch(_){}
 let liveScoreList = null;           // 实时模型算出的比分榜，供 topScores 使用
 
@@ -1466,10 +1466,19 @@ function openMatchup(iH,iA,stage){
   // —— 实时真实对阵（折中版：首发前给初步预测并清晰标注，首发后升级；首发齐自动锁定）——
   const lockedView = !!mhFrozen;
   const ready = mhLineupReady;
-  const lockTimeEl=document.getElementById('mhLockTime');     // 锁定时间码（队名行下方居中）
-  if(lockTimeEl){ const ts=lockedView?fmtLockTime(mhFrozen.at):''; if(ts){ lockTimeEl.textContent='锁定 '+ts; lockTimeEl.style.display=''; } else lockTimeEl.style.display='none'; }
-  if(comp) comp.textContent = lockedView ? '赛前预测 · 已锁定（含首发）' : (ready ? '赛前预测 · 已含首发阵容' : '初步预测 · 未含首发');
-  if(tag) tag.textContent = lockedView ? '已锁定' : (ready ? '已含首发' : '初步');
+  const lockTimeEl=document.getElementById('mhLockTime');     // 旧的居中灰色行：锁定后改放到右上徽标里，这里隐藏
+  const lockTs=lockedView?fmtLockTime(mhFrozen.at):'';
+  if(lockTimeEl) lockTimeEl.style.display='none';
+  if(comp) comp.textContent = lockedView ? '赛前预测 · 含首发' : (ready ? '赛前预测 · 已含首发阵容' : '初步预测 · 未含首发');
+  if(tag){
+    if(lockedView){                                            // 徽标=已锁定+时间，单行绿底绿字
+      tag.innerHTML='已锁定'+(lockTs?' <span style="font-weight:600;font-size:9px;letter-spacing:.02em">'+lockTs+'</span>':'');
+      tag.style.background='rgba(198,255,68,.12)'; tag.style.padding='2px 8px'; tag.style.whiteSpace='nowrap';
+    } else {
+      tag.textContent = ready ? '已含首发' : '初步';
+      tag.style.background=''; tag.style.padding=''; tag.style.whiteSpace=''; tag.style.textAlign=''; tag.style.lineHeight='';
+    }
+  }
   const pr=predictMatch(iH,iA,stage);                  // 模型+阵容（未含赔率）
   // 首发齐 → 用"模型+阵容"预测固化为 final（不含赔率）上报
   if(!mhFrozen && isLiveMatch && mhLineupReady && mhCurFixture && USE_SERVER && _lockState[mhCurFixture]!=='final'){
@@ -2105,7 +2114,7 @@ function stPaint(){
     html+=`<div class="st-note">仅统计「开赛前已锁定预测」且已结束的比赛（共 ${accData.settled} 场）。胜平负＝三概率中最高者命中即对；比分＝实际命中三个预测比分之一即对；均按全场 90 分钟判定。</div>`;
     accData.rows.forEach(r=>{
       const lt=fmtLockTime(r.at);
-      html+=`<div class="acc-row"><div class="acc-m"><div class="acc-t">${r.h} vs ${r.a}${lt?` <span style="color:var(--faint);font-weight:400">· 锁定 ${lt}</span>`:''}</div><div class="acc-p">预测 ${oCN[r.predO]} · 比分 ${r.predScores.join(' / ')||'—'} · 实际 ${oCN[r.actO]} ${r.actS}</div></div><div class="acc-mk"><span class="${r.oOK?'ok':'no'}">胜平负 ${r.oOK?'✓':'✗'}</span><span class="${r.sOK?'ok':'no'}">比分 ${r.sOK?'✓':'✗'}</span></div></div>`;
+      html+=`<div class="acc-row"><div class="acc-m"><div class="acc-t">${r.h} vs ${r.a}${lt?` <span style="color:var(--a);font-weight:500">· 锁定 ${lt}</span>`:''}</div><div class="acc-p">预测 ${oCN[r.predO]} · 比分 ${r.predScores.join(' / ')||'—'} · 实际 ${oCN[r.actO]} ${r.actS}</div></div><div class="acc-mk"><span class="${r.oOK?'ok':'no'}">胜平负 ${r.oOK?'✓':'✗'}</span><span class="${r.sOK?'ok':'no'}">比分 ${r.sOK?'✓':'✗'}</span></div></div>`;
     });
     body.innerHTML=html;
     return;

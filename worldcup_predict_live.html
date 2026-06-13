@@ -1060,7 +1060,7 @@ const autoBase = (typeof location!=='undefined' && /^https?:$/.test(location.pro
 const SERVER_BASE = (CONFIG.SERVER_BASE && CONFIG.SERVER_BASE.length) ? CONFIG.SERVER_BASE : (CONFIG.API_KEY.length ? '' : autoBase);
 const USE_SERVER = CONFIG.USE_LIVE && SERVER_BASE.length > 0 && CONFIG.API_KEY.length === 0;   // 走共享代理(含自动同源)
 const LIVE = CONFIG.USE_LIVE && (USE_SERVER || CONFIG.API_KEY.length > 0);                      // 实时(代理或直连)
-const BUILD='2026-06-r14';
+const BUILD='2026-06-r15';
 try{ console.log('[胜率预测] BUILD='+BUILD+' | USE_LIVE='+CONFIG.USE_LIVE+' | origin='+(typeof location!=='undefined'?location.origin:'-')+' | SERVER_BASE='+SERVER_BASE+' | USE_SERVER='+USE_SERVER+' | LIVE='+LIVE); }catch(_){}
 let liveScoreList = null;           // 实时模型算出的比分榜，供 topScores 使用
 
@@ -2039,14 +2039,24 @@ async function initStrDebug(){
     const rows=[];
     for(const t of teamsArr){
       try{ const d=await coreStrength(t.id,t.name,true);
-        rows.push({name:t.name, att:d.att, def:d.def, str:d.att*d.def,
+        rows.push({id:t.id, name:t.name, att:d.att, def:d.def, str:d.att*d.def,
           prior:d.prior?d.prior.att.toFixed(3):'—', form:d.form?(d.form.att.toFixed(2)+'/'+d.form.def.toFixed(2)):'—',
           wc:d.wc?(d.wc.att.toFixed(2)+'/'+d.wc.def.toFixed(2)+'×'+d.wcW):'—', wpf:d.wcW+'/'+d.priorW+'/'+d.formW});
       }catch(e){}
     }
+    // 用与积分页完全相同的路径(strengthOf+computeQualification)真算一遍出线%，同屏核对"强度↔出线"是否一致
+    let qmap={};
+    try{
+      const st=await api(`/standings?league=${CONFIG.LEAGUE_ID}&season=${CONFIG.SEASON}`);
+      if(st&&st[0]&&st[0].league&&st[0].league.standings){
+        const groups=st[0].league.standings.map(g=>g.map(t=>({id:t.team.id,name:t.team.name,pts:t.points,gd:t.goalsDiff,gf:t.all.goals.for})));
+        const qp=await computeQualification(groups); if(qp) qmap=qp;
+      }
+    }catch(e){}
+    rows.forEach(r=>{ const q=qmap[r.id]; r.qual=(q==null)?'—':(q>=99.5?'≥99%':q<=0.5?'≤1%':Math.round(q)+'%'); });
     rows.sort((a,b)=>b.str-a.str);
-    document.getElementById('sdMsg').textContent='共 '+rows.length+' 队（按 att×def 强度降序）。列：att / def ｜ 先验att ｜ 近况att/def ｜ 世界杯att/def×权重 ｜ 权重(wc/先验/近况)';
-    document.getElementById('sdOut').innerHTML=rows.map((r,i)=>`<div style="border-bottom:1px solid #1c2536;padding:4px 0"><b>${i+1}. ${r.name}</b> — att <b style="color:#c6ff44">${r.att.toFixed(3)}</b> / def <b style="color:#4da8ff">${r.def.toFixed(3)}</b> ｜ 先验 ${r.prior} ｜ 近况 ${r.form} ｜ 世界杯 ${r.wc} ｜ 权重 ${r.wpf}</div>`).join('');
+    document.getElementById('sdMsg').textContent='共 '+rows.length+' 队（按 att×def 强度降序）。列：att / def ｜ 出线% ｜ 先验att ｜ 近况att/def ｜ 世界杯att/def×权重 ｜ 权重(wc/先验/近况)';
+    document.getElementById('sdOut').innerHTML=rows.map((r,i)=>`<div style="border-bottom:1px solid #1c2536;padding:4px 0"><b>${i+1}. ${r.name}</b> — att <b style="color:#c6ff44">${r.att.toFixed(3)}</b> / def <b style="color:#4da8ff">${r.def.toFixed(3)}</b> ｜ 出线 <b style="color:#ffb454">${r.qual}</b> ｜ 先验 ${r.prior} ｜ 近况 ${r.form} ｜ 世界杯 ${r.wc} ｜ 权重 ${r.wpf}</div>`).join('');
   }catch(e){ document.getElementById('sdMsg').textContent='失败：'+e.message; }
 }
 
@@ -2224,6 +2234,14 @@ async function renderUpcoming24(){
 
 /* ===== 出线概率：蒙特卡洛推演（用本站预测模型模拟小组赛剩余比赛 5000 次）===== */
 let qualProb=null, qualSig='', qualBusy=false;
+// 强度会话缓存：同一会话内同一支队只可靠计算一次并复用，保证出线测算与 #strdebug 用同一套干净强度
+const _strCache={}, STR_TTL=15*60*1000;
+async function strengthOf(id,name){
+  const c=_strCache[id]; if(c && Date.now()-c.t<STR_TTL) return c.v;
+  let v=null; try{ v=await coreStrength(id,name); }catch(e){ v=null; }
+  if(!v || typeof v.att!=='number') v=(c&&c.v) || priorStrength(name) || {att:1,def:1};
+  _strCache[id]={v,t:Date.now()}; return v;
+}
 function resultsSig(groups){ let s=''; groups.forEach(g=>g.forEach(t=>{ s+=t.id+':'+t.pts+','+t.gd+','+t.gf+';'; })); return s; }
 // 由双方实力({att,def})构造比分概率的累积分布（中立场，无主场加成）
 function buildCum(bH,bA){
@@ -2239,7 +2257,13 @@ async function computeQualification(groups){
   const ids=[], nameOf={}, gOf={};
   groups.forEach((g,gi)=>g.forEach(t=>{ ids.push(t.id); nameOf[t.id]=t.name; gOf[t.id]=gi; }));
   const uniq=[...new Set(ids)];
-  const strs=await Promise.all(uniq.map(id=>coreStrength(id, nameOf[id]).catch(()=>({att:1,def:1}))));
+  // 限并发(每批6)+缓存取强度：避免 48 队并行突发取数失败 → 强度抖动/反转。失败回退到先验(而非中性1.0)
+  const strs=[];
+  for(let i=0;i<uniq.length;i+=6){
+    const batch=uniq.slice(i,i+6);
+    const r=await Promise.all(batch.map(id=>strengthOf(id, nameOf[id])));
+    strs.push(...r);
+  }
   const S={}; uniq.forEach((id,i)=>S[id]=strs[i]);
   const fxs=await api(`/fixtures?league=${CONFIG.LEAGUE_ID}&season=${CONFIG.SEASON}`).catch(()=>null);
   const DONE=['FT','AET','PEN'];

@@ -391,9 +391,9 @@ canvas{width:100%; height:128px; display:block}
 .predacc .pa-go{margin-left:auto; color:var(--faint); font-size:12px}
 .acc-sum{display:flex; gap:10px; margin:2px 0 12px}
 .acc-card{flex:1; background:var(--surface); border:1px solid rgba(255,255,255,.08); border-top:2px solid rgba(198,255,68,.55); border-radius:14px; padding:14px; text-align:center}
-.acc-card.score{border-top-color:rgba(77,168,255,.55)}
+.acc-card.acc-score{border-top-color:rgba(77,168,255,.55)}
 .acc-card .acc-n{font-family:var(--num); font-size:30px; font-weight:800; color:var(--a); line-height:1}
-.acc-card.score .acc-n{color:var(--b)}
+.acc-card.acc-score .acc-n{color:var(--b)}
 .acc-card .acc-l{font-size:12px; color:var(--muted); margin-top:6px}
 .acc-card .acc-s{font-size:11px; color:var(--faint); margin-top:3px}
 .acc-row{display:flex; align-items:center; gap:10px; background:var(--surface); border:1px solid rgba(255,255,255,.06); border-radius:12px; padding:10px 12px; margin-bottom:8px}
@@ -1062,7 +1062,7 @@ const autoBase = (typeof location!=='undefined' && /^https?:$/.test(location.pro
 const SERVER_BASE = (CONFIG.SERVER_BASE && CONFIG.SERVER_BASE.length) ? CONFIG.SERVER_BASE : (CONFIG.API_KEY.length ? '' : autoBase);
 const USE_SERVER = CONFIG.USE_LIVE && SERVER_BASE.length > 0 && CONFIG.API_KEY.length === 0;   // 走共享代理(含自动同源)
 const LIVE = CONFIG.USE_LIVE && (USE_SERVER || CONFIG.API_KEY.length > 0);                      // 实时(代理或直连)
-const BUILD='2026-06-r20';
+const BUILD='2026-06-r21';
 try{ console.log('[胜率预测] BUILD='+BUILD+' | USE_LIVE='+CONFIG.USE_LIVE+' | origin='+(typeof location!=='undefined'?location.origin:'-')+' | SERVER_BASE='+SERVER_BASE+' | USE_SERVER='+USE_SERVER+' | LIVE='+LIVE); }catch(_){}
 let liveScoreList = null;           // 实时模型算出的比分榜，供 topScores 使用
 
@@ -2110,7 +2110,7 @@ function stPaint(){
     const oPct=Math.round(accData.oCorrect/accData.settled*100), sPct=Math.round(accData.sCorrect/accData.settled*100);
     const oCN={H:'主胜',D:'平局',A:'客胜'};
     let html=tabs;
-    html+=`<div class="acc-sum"><div class="acc-card"><div class="acc-n">${oPct}%</div><div class="acc-l">胜平负准确率</div><div class="acc-s">${accData.oCorrect}/${accData.settled} 场</div></div><div class="acc-card score"><div class="acc-n">${sPct}%</div><div class="acc-l">比分准确率</div><div class="acc-s">${accData.sCorrect}/${accData.settled} 场</div></div></div>`;
+    html+=`<div class="acc-sum"><div class="acc-card"><div class="acc-n">${oPct}%</div><div class="acc-l">胜平负准确率</div><div class="acc-s">${accData.oCorrect}/${accData.settled} 场</div></div><div class="acc-card acc-score"><div class="acc-n">${sPct}%</div><div class="acc-l">比分准确率</div><div class="acc-s">${accData.sCorrect}/${accData.settled} 场</div></div></div>`;
     html+=`<div class="st-note">仅统计「开赛前已锁定预测」且已结束的比赛（共 ${accData.settled} 场）。胜平负＝三概率中最高者命中即对；比分＝实际命中三个预测比分之一即对；均按全场 90 分钟判定。</div>`;
     accData.rows.forEach(r=>{
       const lt=fmtLockTime(r.at);

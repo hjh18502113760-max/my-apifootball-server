@@ -615,6 +615,7 @@ canvas{width:100%; height:128px; display:block}
               <div class="mhvs">VS</div>
               <div class="mhteam"><span class="fl" id="mhFlagB">🇦🇷</span><span class="nm" id="mhNameB">阿根廷</span></div>
             </div>
+            <div id="mhLockTime" style="display:none;text-align:center;margin-top:6px;font-size:11px;color:var(--faint);letter-spacing:.2px"></div>
             <div class="tri" style="margin-top:16px">
               <i class="ta" id="mhA">—</i><i class="td" id="mhD">—</i><i class="tb" id="mhB">—</i>
             </div>
@@ -1060,7 +1061,7 @@ const autoBase = (typeof location!=='undefined' && /^https?:$/.test(location.pro
 const SERVER_BASE = (CONFIG.SERVER_BASE && CONFIG.SERVER_BASE.length) ? CONFIG.SERVER_BASE : (CONFIG.API_KEY.length ? '' : autoBase);
 const USE_SERVER = CONFIG.USE_LIVE && SERVER_BASE.length > 0 && CONFIG.API_KEY.length === 0;   // 走共享代理(含自动同源)
 const LIVE = CONFIG.USE_LIVE && (USE_SERVER || CONFIG.API_KEY.length > 0);                      // 实时(代理或直连)
-const BUILD='2026-06-r16';
+const BUILD='2026-06-r17';
 try{ console.log('[胜率预测] BUILD='+BUILD+' | USE_LIVE='+CONFIG.USE_LIVE+' | origin='+(typeof location!=='undefined'?location.origin:'-')+' | SERVER_BASE='+SERVER_BASE+' | USE_SERVER='+USE_SERVER+' | LIVE='+LIVE); }catch(_){}
 let liveScoreList = null;           // 实时模型算出的比分榜，供 topScores 使用
 
@@ -1427,6 +1428,12 @@ function lineupHTML(i){
   }
   return h;
 }
+function fmtLockTime(at){                    // 时间戳 → 本地 'YYYY-MM-DD HH:MM:SS'
+  const n=Number(at); if(!at || !isFinite(n) || n<=0) return '';
+  const d=new Date(n); if(isNaN(d.getTime())) return '';
+  const p=x=>String(x).padStart(2,'0');
+  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds());
+}
 function openMatchup(iH,iA,stage){
   stage=stage||'group';
   matchupTeams=[iH,iA];
@@ -1458,6 +1465,8 @@ function openMatchup(iH,iA,stage){
   // —— 实时真实对阵（折中版：首发前给初步预测并清晰标注，首发后升级；首发齐自动锁定）——
   const lockedView = !!mhFrozen;
   const ready = mhLineupReady;
+  const lockTimeEl=document.getElementById('mhLockTime');     // 锁定时间码（队名行下方居中）
+  if(lockTimeEl){ const ts=lockedView?fmtLockTime(mhFrozen.at):''; if(ts){ lockTimeEl.textContent='锁定 '+ts; lockTimeEl.style.display=''; } else lockTimeEl.style.display='none'; }
   if(comp) comp.textContent = lockedView ? '赛前预测 · 已锁定（含首发）' : (ready ? '赛前预测 · 已含首发阵容' : '初步预测 · 未含首发');
   if(tag) tag.textContent = lockedView ? '已锁定' : (ready ? '已含首发' : '初步');
   const pr=predictMatch(iH,iA,stage);                  // 模型+阵容（未含赔率）
@@ -1465,7 +1474,7 @@ function openMatchup(iH,iA,stage){
   if(!mhFrozen && isLiveMatch && mhLineupReady && mhCurFixture && USE_SERVER && _lockState[mhCurFixture]!=='final'){
     mhFrozen={ o:(pr.a>=pr.d&&pr.a>=pr.b)?'H':(pr.b>=pr.d?'A':'D'),
       s:(pr.scores&&pr.scores[0]&&pr.scores[0][0])||'',
-      h:teams[iH].nm, a:teams[iA].nm, probs:{h:pr.a,d:pr.d,a:pr.b}, scores:pr.scores, stage:'final' };
+      h:teams[iH].nm, a:teams[iA].nm, probs:{h:pr.a,d:pr.d,a:pr.b}, scores:pr.scores, stage:'final', at:Date.now() };
     lockPrediction(mhCurFixture, mhFrozen);            // 异步落盘(可升级已有 prelim)
   }
   // —— 已锁定 → 用固化值覆盖显示（不再随赔率/阵容变动）；未锁定 → 融合赔率 ——
@@ -1893,6 +1902,7 @@ async function stLoadLive(silent){
     const cache={groups, scorers:scorers||[]}, sig=stSig(cache);
     if(silent && sig===_stSig){ stCache=cache; return; }                     // 无变化 → 不重绘(防闪屏)
     _stSig=sig; stCache=cache;
+    selfScorers=null;                          // 赛果变化(有比赛结束)→ 失效自统计，下次查看射手榜即重算并入新进球
     stPaint();
     ensureQualProb();
     if(typeof ensureSelfScorers==='function' && stTab==='scorers') ensureSelfScorers();
@@ -1930,7 +1940,7 @@ async function computeScorersFromEvents(){
   }));
   const tally={};
   finished.forEach(f=>(_evCache[f.fixture.id]||[]).forEach(g=>{
-    if(!tally[g.id]) tally[g.id]={name:g.name, team:g.team, goals:0};
+    if(!tally[g.id]) tally[g.id]={id:g.id, name:g.name, team:g.team, goals:0};
     tally[g.id].goals++;
   }));
   return Object.values(tally).sort((a,b)=> b.goals-a.goals).slice(0,30);
@@ -1994,7 +2004,7 @@ async function computeAccuracy(){
     const predScores=(pred.scores&&pred.scores.length)?pred.scores.map(x=>x[0]):(pred.s?[pred.s]:[]);  // 三个预测比分(老记录回退单个)
     const sOK=predScores.includes(actS);                                    // 实际命中其一即算对
     settled++; if(oOK)oC++; if(sOK)sC++;
-    rows.push({h:hN, a:aN, predO:pred.o, predScores, actO, actS, oOK, sOK, date:f.fixture.date});
+    rows.push({h:hN, a:aN, predO:pred.o, predScores, actO, actS, oOK, sOK, date:f.fixture.date, at:pred.at});
   });
   rows.sort((a,b)=>new Date(b.date)-new Date(a.date));
   return {settled, oCorrect:oC, sCorrect:sC, rows};
@@ -2093,37 +2103,34 @@ function stPaint(){
     html+=`<div class="acc-sum"><div class="acc-card"><div class="acc-n">${oPct}%</div><div class="acc-l">胜平负准确率</div><div class="acc-s">${accData.oCorrect}/${accData.settled} 场</div></div><div class="acc-card score"><div class="acc-n">${sPct}%</div><div class="acc-l">比分准确率</div><div class="acc-s">${accData.sCorrect}/${accData.settled} 场</div></div></div>`;
     html+=`<div class="st-note">仅统计「开赛前已锁定预测」且已结束的比赛（共 ${accData.settled} 场）。胜平负＝三概率中最高者命中即对；比分＝实际命中三个预测比分之一即对；均按全场 90 分钟判定。</div>`;
     accData.rows.forEach(r=>{
-      html+=`<div class="acc-row"><div class="acc-m"><div class="acc-t">${r.h} vs ${r.a}</div><div class="acc-p">预测 ${oCN[r.predO]} · 比分 ${r.predScores.join(' / ')||'—'} · 实际 ${oCN[r.actO]} ${r.actS}</div></div><div class="acc-mk"><span class="${r.oOK?'ok':'no'}">胜平负 ${r.oOK?'✓':'✗'}</span><span class="${r.sOK?'ok':'no'}">比分 ${r.sOK?'✓':'✗'}</span></div></div>`;
+      const lt=fmtLockTime(r.at);
+      html+=`<div class="acc-row"><div class="acc-m"><div class="acc-t">${r.h} vs ${r.a}${lt?` <span style="color:var(--faint);font-weight:400">· 锁定 ${lt}</span>`:''}</div><div class="acc-p">预测 ${oCN[r.predO]} · 比分 ${r.predScores.join(' / ')||'—'} · 实际 ${oCN[r.actO]} ${r.actS}</div></div><div class="acc-mk"><span class="${r.oOK?'ok':'no'}">胜平负 ${r.oOK?'✓':'✗'}</span><span class="${r.sOK?'ok':'no'}">比分 ${r.sOK?'✓':'✗'}</span></div></div>`;
     });
     body.innerHTML=html;
     return;
   }
   if(stTab==='scorers'){
     sub.textContent='射手榜 · 进球数排名';
-    const official=(scorers||[]).filter(s=>{                 // 只排有进球的，0球不上榜
-      const st=(s.statistics&&s.statistics[0])||{};
-      return ((st.goals&&st.goals.total)||0) > 0;
+    if(selfScorers==null && !selfScorersBusy) ensureSelfScorers();   // 始终先自统计(已结束比赛的进球)作即时来源
+    // 合并：按球员取 max(自统计, 官方)。自统计补官方滞后、官方一旦更新则覆盖修正；头像/姓名优先用官方
+    const merged={};
+    (selfScorers||[]).forEach(s=>{ if(s.id!=null) merged[s.id]={id:s.id, name:s.name, team:s.team, photo:'', goals:s.goals}; });
+    (scorers||[]).forEach(s=>{
+      const p=s.player||{}, st=(s.statistics&&s.statistics[0])||{}, id=p.id;
+      const goals=(st.goals&&st.goals.total)||0; if(id==null||goals<=0) return;
+      const team=(st.team&&st.team.name)||'';
+      if(!merged[id]) merged[id]={id, name:p.name||'—', team, photo:p.photo||'', goals};
+      else { merged[id].goals=Math.max(merged[id].goals, goals); if(p.photo)merged[id].photo=p.photo; if(p.name)merged[id].name=p.name; if(team)merged[id].team=team; }
     });
-    if(official.length){                              // 官方有数据 → 用官方(含头像)
-      let rows='';
-      official.slice(0,30).forEach((s,i)=>{
-        const p=s.player||{}, st=(s.statistics&&s.statistics[0])||{};
-        const goals=(st.goals&&st.goals.total)||0, team=(st.team&&st.team.name)||'';
-        rows+=`<div class="scrow"><div class="rk">${i+1}</div><div class="nm">${p.photo?`<img src="${p.photo}" style="width:22px;height:22px;border-radius:50%;object-fit:cover">`:'<span class="scava">⚽</span>'}<span>${p.name||'—'} <small>${team}</small></span></div><div class="g">${goals} 球</div></div>`;
-      });
-      body.innerHTML=tabs+`<div style="background:var(--surface);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:6px 12px">${rows}</div>`;
-      return;
+    const list=Object.values(merged).filter(x=>x.goals>0).sort((a,b)=> b.goals-a.goals || String(a.name).localeCompare(String(b.name))).slice(0,30);
+    if(!list.length){
+      if(selfScorersBusy || selfScorers==null){ body.innerHTML=tabs+'<div class="st-empty">正在统计射手榜…</div>'; return; }
+      body.innerHTML=tabs+'<div class="st-empty">射手榜暂无数据<br><span style="font-size:11px">开赛进球后更新</span></div>'; return;
     }
-    if(selfScorers && selfScorers.length){            // 官方为空 → 用自统计(占位头像)
-      let rows='';
-      selfScorers.forEach((s,i)=>{ rows+=`<div class="scrow"><div class="rk">${i+1}</div><div class="nm"><span class="scava">⚽</span><span>${s.name} <small>${s.team}</small></span></div><div class="g">${s.goals} 球</div></div>`; });
-      body.innerHTML=tabs+`<div style="background:var(--surface);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:6px 12px">${rows}</div><div class="st-note">官方射手榜暂未更新，以上为本站根据各场进球事件自行统计（暂无球员头像）。</div>`;
-      return;
-    }
-    if(selfScorersBusy){ body.innerHTML=tabs+'<div class="st-empty">正在统计射手榜…</div>'; return; }
-    if(selfScorers && !selfScorers.length){ body.innerHTML=tabs+'<div class="st-empty">射手榜暂无数据<br><span style="font-size:11px">开赛进球后更新</span></div>'; return; }
-    body.innerHTML=tabs+'<div class="st-empty">正在统计射手榜…</div>';
-    ensureSelfScorers();
+    const ava=s=> s.photo?`<img src="${s.photo}" style="width:22px;height:22px;border-radius:50%;object-fit:cover">`:`<span class="scava">${String(s.name||'?').trim().charAt(0).toUpperCase()||'⚽'}</span>`;
+    let rows='';
+    list.forEach((s,i)=>{ rows+=`<div class="scrow"><div class="rk">${i+1}</div><div class="nm">${ava(s)}<span>${s.name} <small>${s.team}</small></span></div><div class="g">${s.goals} 球</div></div>`; });
+    body.innerHTML=tabs+`<div style="background:var(--surface);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:6px 12px">${rows}</div>`;
     return;
   }
   sub.textContent='小组排名 · 出线形势 · '+BUILD;
@@ -2269,8 +2276,13 @@ function buildCum(bH,bA){
   return {gh,ga,cc};
 }
 async function computeQualification(groups){
-  const ids=[], nameOf={}, gOf={};
-  groups.forEach((g,gi)=>g.forEach(t=>{ ids.push(t.id); nameOf[t.id]=t.name; gOf[t.id]=gi; }));
+  // 清洗分组：每支队(按 id)只归入首次出现的小组，避免重复表导致重复计票
+  const _seen=new Set(), _cg=[];
+  groups.forEach(g=>{ const cg=[]; (g||[]).forEach(t=>{ if(t&&t.id!=null&&!_seen.has(t.id)){ _seen.add(t.id); cg.push(t); } }); if(cg.length) _cg.push(cg); });
+  groups=_cg;
+  const ids=[], nameOf={}, gOf={}, keyOf={};
+  groups.forEach((g,gi)=>g.forEach(t=>{ ids.push(t.id); nameOf[t.id]=t.name; gOf[t.id]=gi;
+    keyOf[t.id]={gi,id:t.id}; const nk='n:'+_norm(t.name); if(keyOf[nk]==null) keyOf[nk]={gi,id:t.id}; }));   // 按 id 与 归一化队名 双重索引
   const uniq=[...new Set(ids)];
   // 限并发(每批6)+缓存取强度：避免 48 队并行突发取数失败 → 强度抖动/反转。失败回退到先验(而非中性1.0)
   const strs=[];
@@ -2288,9 +2300,11 @@ async function computeQualification(groups){
   (fxs||[]).forEach(f=>{
     if(!/group/i.test((f.league&&f.league.round)||'')) return;
     if(DONE.includes(f.fixture.status.short)) return;
-    const h=f.teams.home.id, a=f.teams.away.id, gi=gOf[h];
-    if(gi==null || gOf[a]!==gi) return;
-    unplayed.push({gi,h,a,cum:buildCum(S[h]||{att:1,def:1}, S[a]||{att:1,def:1})});
+    const hk=keyOf[f.teams.home.id]||keyOf['n:'+_norm(f.teams.home.name)];   // id 对不上→按队名归一化匹配到积分榜的队
+    const ak=keyOf[f.teams.away.id]||keyOf['n:'+_norm(f.teams.away.name)];
+    if(!hk || !ak || hk.gi!==ak.gi) return;
+    const h=hk.id, a=ak.id;
+    unplayed.push({gi:hk.gi,h,a,cum:buildCum(S[h]||{att:1,def:1}, S[a]||{att:1,def:1})});
   });
   const anyPlayed=groups.some(g=>g.some(t=>t.pts>0||t.gf>0));
   if(!unplayed.length && !anyPlayed) return null;     // 没有可推演的信息

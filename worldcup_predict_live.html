@@ -1062,7 +1062,7 @@ const autoBase = (typeof location!=='undefined' && /^https?:$/.test(location.pro
 const SERVER_BASE = (CONFIG.SERVER_BASE && CONFIG.SERVER_BASE.length) ? CONFIG.SERVER_BASE : (CONFIG.API_KEY.length ? '' : autoBase);
 const USE_SERVER = CONFIG.USE_LIVE && SERVER_BASE.length > 0 && CONFIG.API_KEY.length === 0;   // 走共享代理(含自动同源)
 const LIVE = CONFIG.USE_LIVE && (USE_SERVER || CONFIG.API_KEY.length > 0);                      // 实时(代理或直连)
-const BUILD='2026-06-r21';
+const BUILD='2026-06-r22';
 try{ console.log('[胜率预测] BUILD='+BUILD+' | USE_LIVE='+CONFIG.USE_LIVE+' | origin='+(typeof location!=='undefined'?location.origin:'-')+' | SERVER_BASE='+SERVER_BASE+' | USE_SERVER='+USE_SERVER+' | LIVE='+LIVE); }catch(_){}
 let liveScoreList = null;           // 实时模型算出的比分榜，供 topScores 使用
 
@@ -1913,9 +1913,11 @@ async function stLoadLive(silent){
     if(silent && sig===_stSig){ stCache=cache; return; }                     // 无变化 → 不重绘(防闪屏)
     _stSig=sig; stCache=cache;
     selfScorers=null;                          // 赛果变化(有比赛结束)→ 失效自统计，下次查看射手榜即重算并入新进球
+    _archCache=null;                           // 赛果变化 → 失效预测存档缓存，让"预测战绩"重新拉档并把新结束的比赛纳入评分
     stPaint();
     ensureQualProb();
     if(typeof ensureSelfScorers==='function' && stTab==='scorers') ensureSelfScorers();
+    if(typeof ensureAccuracy==='function') ensureAccuracy();   // 预测战绩页+入口条同步刷新(内部判断当前子页决定是否重绘)
   }catch(e){
     if(!silent) document.getElementById('stBody').innerHTML='<div class="st-empty">积分数据暂未获取到<br><span style="font-size:11px">开赛后会逐步更新</span></div>';
   }
@@ -2209,7 +2211,10 @@ function stPaint(){
   }
   body.innerHTML=html;
 }
-function stSwitch(t){ stTab=t; stPaint(); }
+function stSwitch(t){ stTab=t; stPaint();
+  if(t==='accuracy' && typeof ensureAccuracy==='function'){ _archCache=null; ensureAccuracy(); }   // 进战绩页 → 重新拉档统计
+  if(t==='scorers' && typeof ensureSelfScorers==='function' && selfScorers==null) ensureSelfScorers();
+}
 
 /* ===== 24小时开赛倒计时 ===== */
 const Countdown=(function(){

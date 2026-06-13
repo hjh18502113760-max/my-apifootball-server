@@ -1060,7 +1060,7 @@ const autoBase = (typeof location!=='undefined' && /^https?:$/.test(location.pro
 const SERVER_BASE = (CONFIG.SERVER_BASE && CONFIG.SERVER_BASE.length) ? CONFIG.SERVER_BASE : (CONFIG.API_KEY.length ? '' : autoBase);
 const USE_SERVER = CONFIG.USE_LIVE && SERVER_BASE.length > 0 && CONFIG.API_KEY.length === 0;   // 走共享代理(含自动同源)
 const LIVE = CONFIG.USE_LIVE && (USE_SERVER || CONFIG.API_KEY.length > 0);                      // 实时(代理或直连)
-const BUILD='2026-06-r15';
+const BUILD='2026-06-r16';
 try{ console.log('[胜率预测] BUILD='+BUILD+' | USE_LIVE='+CONFIG.USE_LIVE+' | origin='+(typeof location!=='undefined'?location.origin:'-')+' | SERVER_BASE='+SERVER_BASE+' | USE_SERVER='+USE_SERVER+' | LIVE='+LIVE); }catch(_){}
 let liveScoreList = null;           // 实时模型算出的比分榜，供 topScores 使用
 
@@ -2045,7 +2045,7 @@ async function initStrDebug(){
       }catch(e){}
     }
     // 用与积分页完全相同的路径(strengthOf+computeQualification)真算一遍出线%，同屏核对"强度↔出线"是否一致
-    let qmap={};
+    let qmap={}; _qualDbg={on:1};
     try{
       const st=await api(`/standings?league=${CONFIG.LEAGUE_ID}&season=${CONFIG.SEASON}`);
       if(st&&st[0]&&st[0].league&&st[0].league.standings){
@@ -2053,10 +2053,25 @@ async function initStrDebug(){
         const qp=await computeQualification(groups); if(qp) qmap=qp;
       }
     }catch(e){}
-    rows.forEach(r=>{ const q=qmap[r.id]; r.qual=(q==null)?'—':(q>=99.5?'≥99%':q<=0.5?'≤1%':Math.round(q)+'%'); });
+    const QD=_qualDbg; _qualDbg=null;
+    rows.forEach(r=>{ const q=qmap[r.id]; r.qual=(q==null)?'—':(q>=99.5?'≥99%':q<=0.5?'≤1%':Math.round(q)+'%');
+      // 内部诊断：base、sim实际用的强度、名次分布
+      const b=QD&&QD.base?QD.base[r.id]:null, sv=QD&&QD.S?QD.S[r.id]:null, f=QD&&QD.fin?QD.fin[r.id]:null, n=QD?QD.N:5000;
+      r.dbg = b ? ('base P'+b.pts+' GD'+(b.gd>=0?'+':'')+b.gd+' GF'+b.gf
+        + (sv?' ｜ sim强度 '+sv.att.toFixed(3)+'/'+sv.def.toFixed(3)+((Math.abs(sv.att-r.att)>0.005||Math.abs(sv.def-r.def)>0.005)?' ⚠与显示不一致':''):'')
+        + (f?' ｜ 名次 1/2/3/4='+Math.round(f[0]/n*100)+'/'+Math.round(f[1]/n*100)+'/'+Math.round(f[2]/n*100)+'/'+Math.round(f[3]/n*100)+'% 第三出线='+Math.round(f[4]/n*100)+'%':'')) : '';
+    });
     rows.sort((a,b)=>b.str-a.str);
+    const nm=id=>(QD&&QD.nameOf&&QD.nameOf[id])||id;
+    let upHtml='';
+    if(QD&&QD.unplayed){
+      const rel=QD.unplayed.filter(u=>/czech|south africa/i.test(nm(u.h))||/czech|south africa/i.test(nm(u.a)));
+      upHtml='<div style="background:#10161f;border:1px solid #243042;border-radius:8px;padding:10px;margin-bottom:12px;font-size:12px;color:#cdd8e6">'
+        +'被模拟剩余赛程 共 '+QD.unplayed.length+' 场。其中含 Czech/South Africa 的：'
+        +(rel.length?rel.map(u=>nm(u.h)+' - '+nm(u.a)).join(' ｜ '):'（无）')+'</div>';
+    }
     document.getElementById('sdMsg').textContent='共 '+rows.length+' 队（按 att×def 强度降序）。列：att / def ｜ 出线% ｜ 先验att ｜ 近况att/def ｜ 世界杯att/def×权重 ｜ 权重(wc/先验/近况)';
-    document.getElementById('sdOut').innerHTML=rows.map((r,i)=>`<div style="border-bottom:1px solid #1c2536;padding:4px 0"><b>${i+1}. ${r.name}</b> — att <b style="color:#c6ff44">${r.att.toFixed(3)}</b> / def <b style="color:#4da8ff">${r.def.toFixed(3)}</b> ｜ 出线 <b style="color:#ffb454">${r.qual}</b> ｜ 先验 ${r.prior} ｜ 近况 ${r.form} ｜ 世界杯 ${r.wc} ｜ 权重 ${r.wpf}</div>`).join('');
+    document.getElementById('sdOut').innerHTML=upHtml+rows.map((r,i)=>`<div style="border-bottom:1px solid #1c2536;padding:4px 0"><b>${i+1}. ${r.name}</b> — att <b style="color:#c6ff44">${r.att.toFixed(3)}</b> / def <b style="color:#4da8ff">${r.def.toFixed(3)}</b> ｜ 出线 <b style="color:#ffb454">${r.qual}</b> ｜ 先验 ${r.prior} ｜ 近况 ${r.form} ｜ 世界杯 ${r.wc} ｜ 权重 ${r.wpf}${r.dbg?'<br><span style="color:#7c8aa0;font-size:11px">'+r.dbg+'</span>':''}</div>`).join('');
   }catch(e){ document.getElementById('sdMsg').textContent='失败：'+e.message; }
 }
 
@@ -2233,7 +2248,7 @@ async function renderUpcoming24(){
 }
 
 /* ===== 出线概率：蒙特卡洛推演（用本站预测模型模拟小组赛剩余比赛 5000 次）===== */
-let qualProb=null, qualSig='', qualBusy=false;
+let qualProb=null, qualSig='', qualBusy=false, _qualDbg=null;
 // 强度会话缓存：同一会话内同一支队只可靠计算一次并复用，保证出线测算与 #strdebug 用同一套干净强度
 const _strCache={}, STR_TTL=15*60*1000;
 async function strengthOf(id,name){
@@ -2280,6 +2295,8 @@ async function computeQualification(groups){
   const anyPlayed=groups.some(g=>g.some(t=>t.pts>0||t.gf>0));
   if(!unplayed.length && !anyPlayed) return null;     // 没有可推演的信息
   const N=5000, count={}; uniq.forEach(id=>count[id]=0);
+  let _fin=null;
+  if(_qualDbg){ _fin={}; uniq.forEach(id=>_fin[id]=[0,0,0,0,0]); }
   for(let it=0; it<N; it++){
     const T={}; for(let gi=0;gi<base.length;gi++) for(let k=0;k<base[gi].length;k++){ const t=base[gi][k]; T[t.id]={id:t.id,pts:t.pts,gd:t.gd,gf:t.gf}; }
     for(let u=0;u<unplayed.length;u++){
@@ -2296,11 +2313,17 @@ async function computeQualification(groups){
       if(arr[0]) count[arr[0].id]++;
       if(arr[1]) count[arr[1].id]++;
       if(arr[2]) thirds.push(arr[2]);
+      if(_fin){ for(let k=0;k<4;k++) if(arr[k]) _fin[arr[k].id][k]++; }
     }
     thirds.sort((x,y)=> y.pts-x.pts || y.gd-x.gd || y.gf-x.gf || (Math.random()-0.5));
-    for(let k=0;k<8 && k<thirds.length;k++) count[thirds[k].id]++;
+    for(let k=0;k<8 && k<thirds.length;k++){ count[thirds[k].id]++; if(_fin) _fin[thirds[k].id][4]++; }
   }
   const prob={}; uniq.forEach(id=>prob[id]=count[id]/N*100);
+  if(_qualDbg){
+    _qualDbg.fin=_fin; _qualDbg.S=S; _qualDbg.N=N; _qualDbg.base={}; _qualDbg.nameOf=nameOf;
+    base.forEach(g=>g.forEach(t=>_qualDbg.base[t.id]={pts:t.pts,gd:t.gd,gf:t.gf}));
+    _qualDbg.unplayed=unplayed.map(u=>({h:u.h,a:u.a}));
+  }
   return prob;
 }
 async function ensureQualProb(){

@@ -2101,7 +2101,7 @@ function stPaint(){
     ensureSelfScorers();
     return;
   }
-  sub.textContent='小组排名 · 出线形势';
+  sub.textContent='小组排名 · 出线形势 · '+BUILD;
   if(!groups||!groups.length){
     body.innerHTML=tabs+'<div class="st-empty">小组积分暂无数据<br><span style="font-size:11px">开赛后随每场结果更新</span></div>';
     return;

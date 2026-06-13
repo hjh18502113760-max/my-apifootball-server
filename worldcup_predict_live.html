@@ -1060,7 +1060,8 @@ const autoBase = (typeof location!=='undefined' && /^https?:$/.test(location.pro
 const SERVER_BASE = (CONFIG.SERVER_BASE && CONFIG.SERVER_BASE.length) ? CONFIG.SERVER_BASE : (CONFIG.API_KEY.length ? '' : autoBase);
 const USE_SERVER = CONFIG.USE_LIVE && SERVER_BASE.length > 0 && CONFIG.API_KEY.length === 0;   // 走共享代理(含自动同源)
 const LIVE = CONFIG.USE_LIVE && (USE_SERVER || CONFIG.API_KEY.length > 0);                      // 实时(代理或直连)
-try{ console.log('[胜率预测] BUILD=2026-06-r13 | USE_LIVE='+CONFIG.USE_LIVE+' | origin='+(typeof location!=='undefined'?location.origin:'-')+' | SERVER_BASE='+SERVER_BASE+' | USE_SERVER='+USE_SERVER+' | LIVE='+LIVE); }catch(_){}
+const BUILD='2026-06-r14';
+try{ console.log('[胜率预测] BUILD='+BUILD+' | USE_LIVE='+CONFIG.USE_LIVE+' | origin='+(typeof location!=='undefined'?location.origin:'-')+' | SERVER_BASE='+SERVER_BASE+' | USE_SERVER='+USE_SERVER+' | LIVE='+LIVE); }catch(_){}
 let liveScoreList = null;           // 实时模型算出的比分榜，供 topScores 使用
 
 /* —— 泊松 / Dixon-Coles 简化预测引擎（与第二轮讨论的模型一致）—— */
@@ -1218,7 +1219,7 @@ function compWeight(name){
    FORM_OPP_EXP：打弱队的进球贬值力度（越大→刷弱旅球数越不值钱，治"弱联盟虚高"）
    PRIOR_W：混合里 FIFA先验 的占比（近况占 1-PRIOR_W；越大→越信先验、越不被近况带偏）
    FORM_CLAMP：近况攻防的上下限（防止极端近况压过先验） */
-const FORM_OPP_EXP=0.85, PRIOR_W=0.72, FORM_CLAMP=[0.88,1.14];
+const FORM_OPP_EXP=0.85, PRIOR_W=0.72, FORM_CLAMP=[0.88,1.14], WC_CLAMP=[0.7,1.5];
 // 对手加权 + 赛事加权 + 时间衰减的近况强度
 function formStrength(fx, id){
   const done=(fx||[]).filter(f=>['FT','AET','PEN'].includes(f.fixture.status.short));
@@ -1248,7 +1249,8 @@ async function coreStrength(id, name, dbg){
     if(wcPlayed>0){
       const gf=parseFloat(r.goals.for.average.total)||CONFIG.LEAGUE_AVG;
       const ga=parseFloat(r.goals.against.average.total)||CONFIG.LEAGUE_AVG;
-      wc={att:gf/CONFIG.LEAGUE_AVG, def:CONFIG.LEAGUE_AVG/Math.max(0.4,ga)};
+      const clw=x=>Math.max(WC_CLAMP[0], Math.min(WC_CLAMP[1], x));         // 夹住：早期1场大胜不致顶成全球最强
+      wc={att:clw(gf/CONFIG.LEAGUE_AVG), def:clw(CONFIG.LEAGUE_AVG/Math.max(0.4,ga))};
     }
   }catch(e){}
   let form=null;
@@ -2029,7 +2031,7 @@ async function initGenPred(){
 }
 // 实力估值诊断（仅调参用：打开 #strdebug）：列出各队 att/def 及 先验/近况/世界杯 分量
 async function initStrDebug(){
-  document.body.innerHTML='<div style="padding:18px;font-family:system-ui;color:#eaeff6;background:#070a10;min-height:100vh"><h3>实力估值诊断</h3><p style="color:#94a1b8;font-size:13px">按出线概率口径，列出每支参赛队的 att/def 及分量。att/def 越大越强。用于核对"为什么某队被高/低估"。</p><div id="sdMsg" style="color:#94a1b8;margin-bottom:10px">加载中…</div><div id="sdOut" style="font-family:monospace;font-size:12px;line-height:1.9"></div></div>';
+  document.body.innerHTML='<div style="padding:18px;font-family:system-ui;color:#eaeff6;background:#070a10;min-height:100vh"><h3>实力估值诊断 <span style="font-size:12px;color:#c6ff44">BUILD '+BUILD+'</span></h3><p style="color:#94a1b8;font-size:13px">按出线概率口径，列出每支参赛队的 att/def 及分量。att/def 越大越强。用于核对"为什么某队被高/低估"。</p><div id="sdMsg" style="color:#94a1b8;margin-bottom:10px">加载中…</div><div id="sdOut" style="font-family:monospace;font-size:12px;line-height:1.9"></div></div>';
   try{
     const fxs=await api(`/fixtures?league=${CONFIG.LEAGUE_ID}&season=${CONFIG.SEASON}`);
     const seen={}, teamsArr=[];

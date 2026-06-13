@@ -1060,7 +1060,7 @@ const autoBase = (typeof location!=='undefined' && /^https?:$/.test(location.pro
 const SERVER_BASE = (CONFIG.SERVER_BASE && CONFIG.SERVER_BASE.length) ? CONFIG.SERVER_BASE : (CONFIG.API_KEY.length ? '' : autoBase);
 const USE_SERVER = CONFIG.USE_LIVE && SERVER_BASE.length > 0 && CONFIG.API_KEY.length === 0;   // 走共享代理(含自动同源)
 const LIVE = CONFIG.USE_LIVE && (USE_SERVER || CONFIG.API_KEY.length > 0);                      // 实时(代理或直连)
-try{ console.log('[胜率预测] BUILD=2026-06-r12 | USE_LIVE='+CONFIG.USE_LIVE+' | origin='+(typeof location!=='undefined'?location.origin:'-')+' | SERVER_BASE='+SERVER_BASE+' | USE_SERVER='+USE_SERVER+' | LIVE='+LIVE); }catch(_){}
+try{ console.log('[胜率预测] BUILD=2026-06-r13 | USE_LIVE='+CONFIG.USE_LIVE+' | origin='+(typeof location!=='undefined'?location.origin:'-')+' | SERVER_BASE='+SERVER_BASE+' | USE_SERVER='+USE_SERVER+' | LIVE='+LIVE); }catch(_){}
 let liveScoreList = null;           // 实时模型算出的比分榜，供 topScores 使用
 
 /* —— 泊松 / Dixon-Coles 简化预测引擎（与第二轮讨论的模型一致）—— */
@@ -1194,16 +1194,17 @@ const FIFA_ALIAS = {
   usa:'unitedstates', us:'unitedstates', unitedstatesofamerica:'unitedstates',
   korearepublic:'southkorea', republicofkorea:'southkorea', southkorea:'southkorea',
   iriran:'iran', czechrepublic:'czechia', bosniaherzegovina:'bosniaandherzegovina',
-  cotedivoire:'ivorycoast', caboverde:'capeverde', drcongo:'drcongo', congodr:'drcongo',
-  uae:'unitedarabemirates'
+  cotedivoire:'ivorycoast', caboverde:'capeverde', capeverdeislands:'capeverde',
+  drcongo:'drcongo', congodr:'drcongo', uae:'unitedarabemirates',
+  turkiye:'turkey'
 };
-function _norm(s){ return String(s||'').toLowerCase().replace(/[^a-z]/g,''); }
+function _norm(s){ return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z]/g,''); }  // 先转写重音(ü→u,ç→c)再清洗
 function fifaPts(name){
   let k=_norm(name); if(FIFA_ALIAS[k]) k=FIFA_ALIAS[k];
   return FIFA_PTS[k]!=null ? FIFA_PTS[k] : null;
 }
 function oppFactor(name){ const p=fifaPts(name); return p==null?1:Math.exp(((p-1500)/350)*0.5); }   // 对手越强→>1
-function priorStrength(name){ const p=fifaPts(name); if(p==null) return null; const f=Math.exp(((p-1500)/350)*0.18); return {att:f, def:f}; }
+function priorStrength(name){ let p=fifaPts(name); if(p==null) p=1400; const f=Math.exp(((p-1500)/350)*0.18); return {att:f, def:f}; }  // 查不到→保守默认1400(略低于平均)
 function compWeight(name){
   name=String(name||'').toLowerCase();
   if(name.includes('friendl')) return 0.5;

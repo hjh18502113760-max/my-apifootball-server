@@ -1062,7 +1062,7 @@ const autoBase = (typeof location!=='undefined' && /^https?:$/.test(location.pro
 const SERVER_BASE = (CONFIG.SERVER_BASE && CONFIG.SERVER_BASE.length) ? CONFIG.SERVER_BASE : (CONFIG.API_KEY.length ? '' : autoBase);
 const USE_SERVER = CONFIG.USE_LIVE && SERVER_BASE.length > 0 && CONFIG.API_KEY.length === 0;   // 走共享代理(含自动同源)
 const LIVE = CONFIG.USE_LIVE && (USE_SERVER || CONFIG.API_KEY.length > 0);                      // 实时(代理或直连)
-const BUILD='2026-06-r23';
+const BUILD='2026-06-r24';
 try{ console.log('[胜率预测] BUILD='+BUILD+' | USE_LIVE='+CONFIG.USE_LIVE+' | origin='+(typeof location!=='undefined'?location.origin:'-')+' | SERVER_BASE='+SERVER_BASE+' | USE_SERVER='+USE_SERVER+' | LIVE='+LIVE); }catch(_){}
 let liveScoreList = null;           // 实时模型算出的比分榜，供 topScores 使用
 
@@ -1473,8 +1473,9 @@ function openMatchup(iH,iA,stage){
       h:teams[iH].nm, a:teams[iA].nm, probs:{h:pr.a,d:pr.d,a:pr.b}, scores:pr.scores, stage:'final', at:Date.now() };
     lockPrediction(mhCurFixture, mhFrozen);            // 异步落盘(可升级已有 prelim)
   }
-  // 只有"拿到首发后据此重算"的 final 锁才算【已锁定】；prelim(首发前的预备锁)一律按初步预测展示
-  const lockedView = !!(mhFrozen && mhFrozen.stage==='final');
+  // 只有"拿到首发后据此重算"的 final 锁、且【当前确实读到首发】才算【已锁定】；
+  // 否则(prelim、或 final 锁但此刻读不到首发)一律按初步预测展示，避免"已锁定却未含首发"的矛盾
+  const lockedView = !!(mhFrozen && mhFrozen.stage==='final' && ready);
   const lockTimeEl=document.getElementById('mhLockTime');     // 旧的居中灰色行：锁定后改放到右上徽标里，这里隐藏
   const lockTs=lockedView?fmtLockTime(mhFrozen.at):'';
   if(lockTimeEl) lockTimeEl.style.display='none';

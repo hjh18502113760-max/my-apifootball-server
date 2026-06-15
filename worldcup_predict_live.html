@@ -631,7 +631,7 @@ canvas{width:100%; height:128px; display:block}
           <div class="section-t">可用性影响</div>
           <div id="mhImpact"></div>
 
-          <div class="section-t">最可能比分</div>
+          <div class="section-t">比分推荐 · 稳健 / 进取 / 防冷</div>
           <div class="scores" id="mhScores"></div>
 
           <div class="section-t">预计出场阵容 · 点击看球员</div>
@@ -1063,7 +1063,7 @@ const autoBase = (typeof location!=='undefined' && /^https?:$/.test(location.pro
 const SERVER_BASE = (CONFIG.SERVER_BASE && CONFIG.SERVER_BASE.length) ? CONFIG.SERVER_BASE : (CONFIG.API_KEY.length ? '' : autoBase);
 const USE_SERVER = CONFIG.USE_LIVE && SERVER_BASE.length > 0 && CONFIG.API_KEY.length === 0;   // 走共享代理(含自动同源)
 const LIVE = CONFIG.USE_LIVE && (USE_SERVER || CONFIG.API_KEY.length > 0);                      // 实时(代理或直连)
-const BUILD='2026-06-r28';
+const BUILD='2026-06-r29';
 try{ console.log('[胜率预测] BUILD='+BUILD+' | USE_LIVE='+CONFIG.USE_LIVE+' | origin='+(typeof location!=='undefined'?location.origin:'-')+' | SERVER_BASE='+SERVER_BASE+' | USE_SERVER='+USE_SERVER+' | LIVE='+LIVE); }catch(_){}
 let liveScoreList = null;           // 实时模型算出的比分榜，供 topScores 使用
 
@@ -1078,6 +1078,37 @@ function lambdas(strH,strA){
 }
 /* 比赛中：对"剩余时间还会进的球"建模，叠加当前比分，输出 胜平负 + 比分榜 */
 function mk(logo){ return logo ? `<img class="lg" src="${logo}" alt="" onerror="this.outerHTML='⚽'">` : '⚽'; }
+// —— 比分策略层：从概率矩阵挑「稳健/进取/防冷」三档（精算+评球口径，不扭曲概率）——
+function recommendScores(cells, pH, pA){
+  const ssum=cells.reduce((t,c)=>t+c.p,0)||1;
+  const sorted=[...cells].sort((x,y)=>y.p-x.p);
+  const favH = pH>=pA;                                  // 占优方(按胜率)
+  const favWins = c => favH ? c.h>c.a : c.a>c.h;
+  const favMar  = c => favH ? c.h-c.a : c.a-c.h;
+  const key = c => c.h+':'+c.a;
+  const used=new Set();
+  const pick=pred=>{ for(const c of sorted){ if(!used.has(key(c)) && pred(c)) return c; } return null; };
+  const anchor=sorted[0]; used.add(key(anchor));                       // 稳健：全局最可能(正常剧本)
+  const aMar = favWins(anchor)? favMar(anchor) : 0;
+  const aggressive = pick(c=>favWins(c)&&favMar(c)>=Math.max(2,aMar+1)) // 进取：占优方更大净胜球里最可能
+                  || pick(c=>favWins(c)&&favMar(c)>aMar)
+                  || pick(c=>favWins(c)) || pick(()=>true);
+  if(aggressive) used.add(key(aggressive));
+  const upset = pick(c=>!favWins(c)) || pick(()=>true);                // 防冷：占优方不胜(平/冷)里最可能
+  if(upset) used.add(key(upset));
+  const fmt = c => c ? [key(c), Math.round(c.p/ssum*100)] : ['—',0];
+  return { favH, scores:[fmt(anchor), fmt(aggressive), fmt(upset)] };
+}
+// —— 比赛类型识别：从胜率与进球期望派生剧本标签 ——
+function matchType(pH,pD,pA,lH,lA,stage){
+  const favWin=Math.max(pH,pA), gap=Math.abs(pH-pA);
+  let t;
+  if(favWin>=78)      t='实力悬殊';
+  else if(favWin>=60) t='强弱明显';
+  else if(gap<=12)    t='势均力敌';
+  else                t='略占上风';
+  return (stage==='ko'?'淘汰赛 · ':'')+t;
+}
 function predictLive(lA,lB,curA,curB,minute){
   const rem=Math.max(0,(90-minute))/90;
   const M=matrix(lA*rem, lB*rem);
@@ -1088,11 +1119,9 @@ function predictLive(lA,lB,curA,curB,minute){
   }
   const s=(a+d+b)||1;
   const cells=[];
-  for(let i=0;i<M.length;i++)for(let j=0;j<M.length;j++)cells.push({s:`${curA+i}:${curB+j}`,p:M[i][j]});
-  cells.sort((x,y)=>y.p-x.p);
-  const ssum=cells.reduce((t,c)=>t+c.p,0)||1;
-  const scores=cells.slice(0,3).map(c=>[c.s, Math.round(c.p/ssum*100)]);
-  return {a:a/s*100, d:d/s*100, b:b/s*100, scores};
+  for(let i=0;i<M.length;i++)for(let j=0;j<M.length;j++)cells.push({h:curA+i, a:curB+j, p:M[i][j]});
+  const rec=recommendScores(cells, a, b);              // 稳健/进取/防冷（用胜负概率定占优方）
+  return {a:a/s*100, d:d/s*100, b:b/s*100, scores:rec.scores, favH:rec.favH, lH:lA, lA:lB};
 }
 
 /* —— 数据接口网关（缓存 + 每日额度管理 + 失败回退演示）—— */
@@ -1461,7 +1490,7 @@ function openMatchup(iH,iA,stage){
     ['mhA','mhD','mhB'].forEach((id,k)=>{const e=document.getElementById(id); e.textContent='—'; e.style.flexBasis=(k===1?34:33)+'%';});
     document.getElementById('mhKoTitle').style.display='none'; document.getElementById('mhKoSection').style.display='none';
     document.getElementById('mhImpact').innerHTML='<div style="background:rgba(198,255,68,.06);border:1px solid rgba(198,255,68,.22);border-radius:12px;padding:12px 14px;font-size:12.5px;line-height:1.7;color:var(--muted)">这是<b style="color:var(--a)">界面示例</b>，<b>不含任何真实或预测数据</b>。接入实时数据、且赛事开始后，这里会显示真实的赛前胜率、比分概率与出场阵容分析。</div>';
-    document.getElementById('mhScores').innerHTML=['最可能','次可能','第三'].map(l=>`<div class="sc"><div class="rank">${l}</div><div class="v">—</div><div class="p">—</div><div class="pb"><i style="width:0%"></i></div></div>`).join('');
+    document.getElementById('mhScores').innerHTML=['稳健','进取','防冷'].map(l=>`<div class="sc"><div class="rank">${l}</div><div class="v">—</div><div class="p">—</div><div class="pb"><i style="width:0%"></i></div></div>`).join('');
     document.getElementById('mhLineA').innerHTML='<div style="color:var(--faint);padding:10px 2px;font-size:13px">示例 · 暂无数据</div>';
     document.getElementById('mhLineB').innerHTML='<div style="color:var(--faint);padding:10px 2px;font-size:13px">示例 · 暂无数据</div>';
     return;
@@ -1519,11 +1548,17 @@ function openMatchup(iH,iA,stage){
     document.getElementById('mhKoA').style.flexBasis=pr.ko.a+'%'; document.getElementById('mhKoA').textContent=Math.round(pr.ko.a)+'%';
     document.getElementById('mhKoBreak').textContent=`90分钟分出 ${Math.round(pr.ko.in90)}% · 加时 ${Math.round(pr.ko.inET)}% · 点球 ${Math.round(pr.ko.inPens)}%`;
   } else { koT.style.display='none'; koS.style.display='none'; }
+  // —— 比赛解读（职业评球口径：剧本 + 倾向 + 比分逻辑）——
+  const favNm = (pr.a>=pr.b ? teams[iH].nm : teams[iA].nm);
+  const favWinP = Math.round(Math.max(pr.a, pr.b));
+  const mtype = matchType(pr.a, pr.d, pr.b, pr.lH, pr.lA, stage);
+  const anchorS=pr.scores[0]&&pr.scores[0][0], aggS=pr.scores[1]&&pr.scores[1][0], upS=pr.scores[2]&&pr.scores[2][0];
+  const readHtml = `<div style="background:rgba(77,168,255,.07);border:1px solid rgba(77,168,255,.25);border-radius:12px;padding:11px 13px;margin-bottom:10px;font-size:12.5px;line-height:1.75;color:var(--muted)"><b style="color:var(--b)">比赛解读</b> 本场为【<b style="color:var(--txt)">${mtype}</b>】：${favWinP>=60?`<b style="color:var(--txt)">${favNm}</b> 胜率 ${favWinP}%、进攻端占优`:`双方接近，胜率 ${Math.round(pr.a)}% / 平 ${Math.round(pr.d)}% / ${Math.round(pr.b)}%`}。比分逻辑：基础最可能 <b style="color:var(--txt)">${anchorS}</b>（稳健）${aggS&&aggS!==anchorS?`；结合实力差距，<b style="color:var(--a)">${aggS}</b> 提升为进取比分`:''}${upS?`；<b>${upS}</b> 作为防冷参考`:''}。</div>`;
   const note = ready
     ? '<div class="mh-ready">✓ 已读取双方首发名单，以下为已含首发的预测。'+oddsTag+'</div>'
     : '<div class="mh-prelim"><b>初步预测 · 未含首发名单</b>'+oddsTag+'　以下数值基于双方近期实力与已知伤停，<b>仅供参考</b>；官方公布首发后（通常赛前约 1 小时）会自动升级为更准确的预测。这是正常的等待状态，并非功能缺失。</div>';
-  document.getElementById('mhImpact').innerHTML = note + impactLine(iH) + impactLine(iA);
-  const mx=pr.scores[0][1], labs=['最可能','次可能','第三'];
+  document.getElementById('mhImpact').innerHTML = note + readHtml + impactLine(iH) + impactLine(iA);
+  const mx=Math.max(pr.scores[0][1],1), labs=['稳健','进取','防冷'];
   document.getElementById('mhScores').innerHTML=pr.scores.map((s,k)=>`<div class="sc"><div class="rank">${labs[k]}</div><div class="v">${s[0]}</div><div class="p">${s[1]}%</div><div class="pb"><i style="width:${s[1]/mx*100}%"></i></div></div>`).join('');
   if(ready){
     document.getElementById('mhLineA').innerHTML=lineupHTML(iH);
@@ -2535,7 +2570,7 @@ function renderPred(){
   document.getElementById('tB').style.flexBasis=pB+'%'; document.getElementById('tB').textContent=Math.round(pB)+'%';
   document.getElementById('mA').style.width=pA+'%'; document.getElementById('mD').style.width=d+'%'; document.getElementById('mB').style.width=pB+'%';
   const ts=topScores(), mx=ts[0][1];
-  const labs=['最可能','次可能','第三'];
+  const labs=['稳健','进取','防冷'];
   document.getElementById('topScores').innerHTML=ts.map((s,i)=>`
     <div class="sc"><div class="rank">${labs[i]}</div><div class="v">${s[0]}</div><div class="p">${s[1]}%</div>
     <div class="pb"><i style="width:${s[1]/mx*100}%"></i></div></div>`).join('');

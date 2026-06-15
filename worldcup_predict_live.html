@@ -740,8 +740,8 @@ function show(v){
   if(v==='live'){ requestAnimationFrame(drawTrend); if(typeof renderUpcoming24==='function') renderUpcoming24(); }
   if(v==='standings') renderStandings();
   if(v==='sched' && LIVE && typeof renderScheduleLive==='function'){
-    if(!document.querySelector('#v-sched .fix[data-fid]')) renderScheduleLive();   // 尚未渲染 → 先渲染
-    else { schedLiveMerge(); schedFullReconcile(); }                                // 已渲染 → 原地刷新
+    if(!document.querySelector('#v-sched .fix[data-fid]')) renderScheduleLive().then(()=>scrollToNextMatch());   // 尚未渲染 → 渲染后定位
+    else { schedLiveMerge(); schedFullReconcile(); scrollToNextMatch(); }                                        // 已渲染 → 刷新并定位
     startSchedPollers();
   }
 }
@@ -1063,7 +1063,7 @@ const autoBase = (typeof location!=='undefined' && /^https?:$/.test(location.pro
 const SERVER_BASE = (CONFIG.SERVER_BASE && CONFIG.SERVER_BASE.length) ? CONFIG.SERVER_BASE : (CONFIG.API_KEY.length ? '' : autoBase);
 const USE_SERVER = CONFIG.USE_LIVE && SERVER_BASE.length > 0 && CONFIG.API_KEY.length === 0;   // 走共享代理(含自动同源)
 const LIVE = CONFIG.USE_LIVE && (USE_SERVER || CONFIG.API_KEY.length > 0);                      // 实时(代理或直连)
-const BUILD='2026-06-r29';
+const BUILD='2026-06-r30';
 try{ console.log('[胜率预测] BUILD='+BUILD+' | USE_LIVE='+CONFIG.USE_LIVE+' | origin='+(typeof location!=='undefined'?location.origin:'-')+' | SERVER_BASE='+SERVER_BASE+' | USE_SERVER='+USE_SERVER+' | LIVE='+LIVE); }catch(_){}
 let liveScoreList = null;           // 实时模型算出的比分榜，供 topScores 使用
 
@@ -2473,6 +2473,14 @@ function startSchedPollers(){
   _schedTimers=[ setInterval(schedLiveMerge, 8000), setInterval(schedFullReconcile, 30000) ];
 }
 
+// 进入赛程页 → 把"正在进行/下一场即将开赛"的比赛定位到屏幕中央，省去手动下滚
+function scrollToNextMatch(){
+  const v=document.getElementById('v-sched');
+  if(!v || !v.classList.contains('on')) return;
+  const live=v.querySelector('.fix[data-cat="live"]');
+  const target = live || v.querySelector('.fix:not([data-cat="done"])');
+  if(target) requestAnimationFrame(()=>{ try{ target.scrollIntoView({block:'center', behavior:'auto'}); }catch(e){ target.scrollIntoView(); } });
+}
 async function renderScheduleLive(){
   try{
     const fxs=await api(`/fixtures?league=${CONFIG.LEAGUE_ID}&season=${CONFIG.SEASON}`);   // 全部赛程
@@ -2507,7 +2515,7 @@ async function renderScheduleLive(){
 }
 if(typeof location!=='undefined' && location.hash==='#genpred'){ initGenPred(); }
 if(typeof location!=='undefined' && location.hash==='#strdebug'){ initStrDebug(); }
-if(LIVE){ renderScheduleLive(); }
+if(LIVE){ renderScheduleLive().then(()=>scrollToNextMatch()); }
 if(LIVE){ renderTeamsLive(); }
 if(LIVE){ renderPredAccBar(); }
 

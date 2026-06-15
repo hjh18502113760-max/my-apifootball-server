@@ -343,6 +343,9 @@ canvas{width:100%; height:128px; display:block}
 .match-read .mr-title{color:var(--b); font-weight:700}
 .mread-tags{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px}
 .mread-tags span{border:1px solid rgba(255,255,255,.09); background:rgba(255,255,255,.04); color:var(--faint); border-radius:7px; padding:2px 6px; font-size:10.5px; line-height:1.35}
+.expert-actions{margin:10px 0 2px}
+.expert-btn{width:100%; min-height:42px; border:1px solid rgba(198,255,68,.32); border-radius:12px; background:linear-gradient(90deg,rgba(198,255,68,.14),rgba(77,168,255,.10)); color:var(--txt); font-family:var(--ui); font-size:13px; font-weight:700; cursor:pointer}
+.expert-btn:active{transform:scale(.99)}
 /* ---- 积分榜 / 出线 / 射手榜 ---- */
 .st-tabs{display:flex; gap:8px; margin:2px 0 14px}
 .st-tabs button{flex:1; background:var(--surface); border:1px solid rgba(255,255,255,.08); color:var(--muted); font-family:var(--ui); font-size:13px; padding:9px 0; border-radius:10px; cursor:pointer}
@@ -430,7 +433,7 @@ canvas{width:100%; height:128px; display:block}
           </div>
 
           <div id="socialBar" class="social-bar">
-            <span class="sb-wx" id="sbWx">竞猜交流 + 微信 <b>HJH_ZSH_ZQ</b>（点击复制）</span>
+            <span class="sb-wx" id="sbWx">观赛交流 + 微信 <b>HJH_ZSH_ZQ</b>（点击复制）</span>
             <span class="sb-online" id="sbOnline"><i class="sb-dot"></i>在线 <b id="sbOnlineN">—</b> 人</span>
           </div>
 
@@ -639,6 +642,7 @@ canvas{width:100%; height:128px; display:block}
 
           <div class="section-t">比分推荐 · 稳健 / 进取 / 防冷</div>
           <div class="scores" id="mhScores"></div>
+          <div class="expert-actions"><button class="expert-btn" id="mhAiExplain" onclick="requestMatchAiRead()">AI 经验解读本场</button></div>
 
           <div class="section-t">预计出场阵容 · 点击看球员</div>
           <div class="lineups">
@@ -725,7 +729,7 @@ canvas{width:100%; height:128px; display:block}
         </div>
         <div class="ai-foot">
           <span id="aiCount">0/300</span> · 内容由 AI 生成，作为观赛数据参考<br>
-          <span class="ai-wx" id="aiWx">竞猜交流 · 加微信 <b>HJH_ZSH_ZQ</b>（点击复制）</span>
+          <span class="ai-wx" id="aiWx">观赛交流 · 加微信 <b>HJH_ZSH_ZQ</b>（点击复制）</span>
         </div>
       </section>
     </div>
@@ -1069,7 +1073,7 @@ const autoBase = (typeof location!=='undefined' && /^https?:$/.test(location.pro
 const SERVER_BASE = (CONFIG.SERVER_BASE && CONFIG.SERVER_BASE.length) ? CONFIG.SERVER_BASE : (CONFIG.API_KEY.length ? '' : autoBase);
 const USE_SERVER = CONFIG.USE_LIVE && SERVER_BASE.length > 0 && CONFIG.API_KEY.length === 0;   // 走共享代理(含自动同源)
 const LIVE = CONFIG.USE_LIVE && (USE_SERVER || CONFIG.API_KEY.length > 0);                      // 实时(代理或直连)
-const BUILD='2026-06-r31-schedule-focus';
+const BUILD='2026-06-r32-ai-expert-context';
 try{ console.log('[胜率预测] BUILD='+BUILD+' | USE_LIVE='+CONFIG.USE_LIVE+' | origin='+(typeof location!=='undefined'?location.origin:'-')+' | SERVER_BASE='+SERVER_BASE+' | USE_SERVER='+USE_SERVER+' | LIVE='+LIVE); }catch(_){}
 let liveScoreList = null;           // 实时模型算出的比分榜，供 topScores 使用
 
@@ -1484,6 +1488,7 @@ const ST_MAP={fit:['健康','st-fit'],doubt:['出场存疑','st-doubt'],inj:['�
 const POS_MAP={GK:['门将','p-gk'],DF:['后卫','p-df'],MF:['中场','p-mf'],FW:['前锋','p-fw']};
 const ST_COLOR={fit:'var(--a)',doubt:'var(--warn)',inj:'var(--live)',sus:'var(--muted)'};
 const ST_SHORT={doubt:'存疑',inj:'伤缺',sus:'停赛'};
+let currentMatchAiContext=null;
 
 function setTri(pfx,a,d,b){
   const g=id=>document.getElementById(id);
@@ -1498,6 +1503,41 @@ function impactLine(i){
   const eff=[]; const ap=Math.round(pen.ap*100), dp=Math.round(pen.dp*100);
   if(ap)eff.push('进攻 −'+ap+'%'); if(dp)eff.push('防守 −'+dp+'%');
   return `<div class="imp warn">${t.nm}：${who} → ${eff.join('，')||'影响有限'}</div>`;
+}
+function playerBrief(list, limit){
+  return (list||[]).slice(0,limit||11).map(p=>{
+    const pos=(POS_MAP[p.pos]&&POS_MAP[p.pos][0])||p.pos||'球员';
+    const st=p.st&&p.st!=='fit'?(' '+(ST_SHORT[p.st]||p.st)):'';
+    const w=p.wt!=null?(' 重要度'+Math.round(playerWeight(p)*100)+'%'):'';
+    return `${p.role||p.name||'未知'}(${pos}${st}${w})`;
+  });
+}
+function absenceBrief(list, limit){
+  return (list||[]).slice(0,limit||8).map(o=>`${o.name}${o.sus?'(停赛)':'(缺阵)'}${o.reason?' '+o.reason:''}`);
+}
+function buildMatchAiContext(iH,iA,pr,stage,ready,lockedView,lockTs,profile){
+  const H=teams[iH], A=teams[iA], s0=(pr.scores||[]).map((s,idx)=>({type:['稳健','进取','防冷'][idx]||('候选'+(idx+1)), score:s[0], probability:s[1]}));
+  return {
+    source:'worldcup_matchup_panel',
+    instruction:'请从主观经验、概率校准和职业评球角度解释，不要给资金决策或确定性承诺。',
+    match:{home:H.nm, away:A.nm, stage:stage==='ko'?'淘汰赛':'小组赛/常规赛程', lineupReady:!!ready, locked:!!lockedView, lockTime:lockTs||''},
+    model:{
+      winDrawLose:{home:Math.round(pr.a), draw:Math.round(pr.d), away:Math.round(pr.b)},
+      scores:s0,
+      expectedGoals:{home:+(pr.lH||0).toFixed(2), away:+(pr.lA||0).toFixed(2), total:+(((pr.lH||0)+(pr.lA||0)).toFixed(2))},
+      profile:{label:(profile&&profile.label)||'', tone:(profile&&profile.tone)||'', factors:(profile&&profile.factors)||[]}
+    },
+    availability:[
+      {team:H.nm, penalty:availabilityPenalty(iH), starters:playerBrief(squads[iH],11), substitutes:playerBrief(squadSubs[iH],10), absences:absenceBrief(squadOut[iH],8)},
+      {team:A.nm, penalty:availabilityPenalty(iA), starters:playerBrief(squads[iA],11), substitutes:playerBrief(squadSubs[iA],10), absences:absenceBrief(squadOut[iA],8)}
+    ]
+  };
+}
+function requestMatchAiRead(){
+  if(!currentMatchAiContext){ alert('请先打开一场真实对阵，等页面生成模型预测后再解读。'); return; }
+  if(typeof window.askDoubao!=='function'){ alert('AI 解读需要在线服务器模式，部署到 Render 后可用。'); return; }
+  const q='请基于当前对阵数据，加入主观经验判断，给出胜平负倾向、概率最大的三个比分、关键依据和风险点。';
+  window.askDoubao(q,{matchContext:currentMatchAiContext});
 }
 function lineupHTML(i){
   const sq=squads[i]||[], subs=squadSubs[i]||[], out=squadOut[i]||[];
@@ -1551,6 +1591,7 @@ function openMatchup(iH,iA,stage){
   const tag=document.querySelector('#v-matchup .comp .demo-tag');
   const isLiveMatch=(iH===6 && iA===7);   // 实时对阵使用 teams[6/7]
   if(!isLiveMatch){
+    currentMatchAiContext=null;
     marketProbs=null;
     // —— 示例：全部数值归零，仅保留界面骨架 ——
     document.querySelector('#v-matchup .tdhead .sm').textContent='示例界面 · 不含真实数据';
@@ -1597,6 +1638,7 @@ function openMatchup(iH,iA,stage){
   if(lockedView && mhFrozen.probs){
     pr.a=mhFrozen.probs.h; pr.d=mhFrozen.probs.d; pr.b=mhFrozen.probs.a;
     if(mhFrozen.scores && mhFrozen.scores.length) pr.scores=mhFrozen.scores;
+    if(mhFrozen.profile) pr.profile=mhFrozen.profile;
     oddsTag='<span style="display:inline-block;margin-left:6px;font-size:10px;color:var(--b);border:1px solid rgba(77,168,255,.4);border-radius:6px;padding:1px 6px;vertical-align:middle">已锁定赛前预测</span>';
   } else if(marketProbs && isFinite(marketProbs.h+marketProbs.d+marketProbs.a)){
     const wM=0.35;                                     // 市场概率权重（适度，模型仍为主）
@@ -1631,6 +1673,7 @@ function openMatchup(iH,iA,stage){
   document.getElementById('mhImpact').innerHTML = note + readHtml + impactLine(iH) + impactLine(iA);
   const mx=Math.max(pr.scores[0][1],1), labs=['稳健','进取','防冷'];
   document.getElementById('mhScores').innerHTML=pr.scores.map((s,k)=>`<div class="sc"><div class="rank">${labs[k]}</div><div class="v">${s[0]}</div><div class="p">${s[1]}%</div><div class="pb"><i style="width:${s[1]/mx*100}%"></i></div></div>`).join('');
+  currentMatchAiContext=buildMatchAiContext(iH,iA,pr,stage,ready,lockedView,lockTs,profile);
   if(ready){
     document.getElementById('mhLineA').innerHTML=lineupHTML(iH);
     document.getElementById('mhLineB').innerHTML=lineupHTML(iA);
@@ -2837,7 +2880,8 @@ if(LIVE && USE_SERVER){ setTimeout(lockSweep, 4000); setInterval(lockSweep, 3000
   fab.onclick=open; mask.onclick=close; closeBtn.onclick=close;
   function addMsg(text, cls){ const d=document.createElement('div'); d.className='ai-msg '+cls; d.textContent=text; bodyEl.appendChild(d); bodyEl.scrollTop=bodyEl.scrollHeight; return d; }
   function updCount(){ const n=countUnits(textEl.value); if(countEl){ countEl.textContent=n+'/'+MAX_UNITS; countEl.classList.toggle('over', n>MAX_UNITS); } return n; }
-  async function ask(q){
+  async function ask(q, opts){
+    opts=opts||{};
     q=(q||'').trim(); if(!q||busy) return;
     if(countUnits(q)>MAX_UNITS){ addMsg('问题太长啦，请精简到 '+MAX_UNITS+' 字以内（中英文合计）。','err'); return; }
     if(chips && chips.parentNode){ chips.parentNode.removeChild(chips); }   // 首问后移除快捷问题
@@ -2845,7 +2889,9 @@ if(LIVE && USE_SERVER){ setTimeout(lockSweep, 4000); setInterval(lockSweep, 3000
     textEl.value=''; textEl.style.height='auto'; updCount(); busy=true; sendBtn.disabled=true;
     const tip=addMsg('豆包思考中…','bot typing');
     try{
-      const r=await fetch(aiBase+'/ai/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:history.slice(-8)})});
+      const payload={messages:history.slice(-8)};
+      if(opts.matchContext) payload.matchContext=opts.matchContext;
+      const r=await fetch(aiBase+'/ai/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
       const ct=r.headers.get('content-type')||'';
       if(ct.indexOf('application/json')>=0 || !r.body || !r.body.getReader){
         // 非流式（出错信息，或浏览器不支持流式读取）
@@ -2874,6 +2920,7 @@ if(LIVE && USE_SERVER){ setTimeout(lockSweep, 4000); setInterval(lockSweep, 3000
     }catch(e){ try{tip.remove();}catch(_){} addMsg('网络异常，请稍后重试','err'); }
     busy=false; sendBtn.disabled=false; textEl.focus();
   }
+  window.askDoubao=function(q,opts){ open(); return ask(q,opts||{}); };
   sendBtn.onclick=()=>ask(textEl.value);
   textEl.addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); ask(textEl.value); } });
   textEl.addEventListener('input',()=>{ textEl.style.height='auto'; textEl.style.height=Math.min(textEl.scrollHeight,96)+'px'; updCount(); });

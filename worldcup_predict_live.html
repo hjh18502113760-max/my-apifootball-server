@@ -1051,9 +1051,10 @@ const CONFIG = {
   PRED_MS:  120000,                 // 技术统计/预测重算间隔：2 分钟（进球时也会立即重算）
   LEAGUE_ID: 1,                     // 1 = FIFA World Cup
   SEASON:   2026,
-  HOME_ADV: 1.15,                   // 主场进攻系数
+  HOME_ADV: 1.05,                   // 主场进攻系数（世界杯多为中立场，仅保留轻微指定主队效应）
   LEAGUE_AVG: 1.35,                 // 单队场均进球基准
-  QUAL_SPREAD: 1.9,                 // 出线测算：强度→进球期望的弹性指数(>1 放大强弱差)；1.9 使头号种子出线≈85%
+  QUAL_SPREAD: 1.0,                 // 出线测算弹性指数：1.0=不额外放大(强弱差已做进攻防评级本身)
+  MATCH_SPREAD: 1.0,                // 赛前对阵比分弹性指数：1.0=不额外放大(强弱差已做进攻防评级本身)
   MAX_GOALS: 6,
   FORM_N: 10                        // 球员"近期表现"展示的场次数（可调大，如 15/20）
 };
@@ -1062,7 +1063,7 @@ const autoBase = (typeof location!=='undefined' && /^https?:$/.test(location.pro
 const SERVER_BASE = (CONFIG.SERVER_BASE && CONFIG.SERVER_BASE.length) ? CONFIG.SERVER_BASE : (CONFIG.API_KEY.length ? '' : autoBase);
 const USE_SERVER = CONFIG.USE_LIVE && SERVER_BASE.length > 0 && CONFIG.API_KEY.length === 0;   // 走共享代理(含自动同源)
 const LIVE = CONFIG.USE_LIVE && (USE_SERVER || CONFIG.API_KEY.length > 0);                      // 实时(代理或直连)
-const BUILD='2026-06-r24';
+const BUILD='2026-06-r27';
 try{ console.log('[胜率预测] BUILD='+BUILD+' | USE_LIVE='+CONFIG.USE_LIVE+' | origin='+(typeof location!=='undefined'?location.origin:'-')+' | SERVER_BASE='+SERVER_BASE+' | USE_SERVER='+USE_SERVER+' | LIVE='+LIVE); }catch(_){}
 let liveScoreList = null;           // 实时模型算出的比分榜，供 topScores 使用
 
@@ -1207,7 +1208,8 @@ function fifaPts(name){
   return FIFA_PTS[k]!=null ? FIFA_PTS[k] : null;
 }
 function oppFactor(name){ const p=fifaPts(name); return p==null?1:Math.exp(((p-1500)/350)*0.5); }   // 对手越强→>1
-function priorStrength(name){ let p=fifaPts(name); if(p==null) p=1400; const f=Math.exp(((p-1500)/350)*0.18); return {att:f, def:f}; }  // 查不到→保守默认1400(略低于平均)
+const STR_K=0.0018, STR_P0=1565;   // FIFA积分→攻防倍率：陡度k与基准P0(att=1的积分锚点)。尺度越陡强弱越拉得开
+function priorStrength(name){ let p=fifaPts(name); if(p==null) p=1400; const f=Math.exp(STR_K*(p-STR_P0)); return {att:f, def:f}; }  // 查不到→保守默认1400(约0.80)
 function compWeight(name){
   name=String(name||'').toLowerCase();
   if(name.includes('friendl')) return 0.5;
@@ -1221,7 +1223,7 @@ function compWeight(name){
    FORM_OPP_EXP：打弱队的进球贬值力度（越大→刷弱旅球数越不值钱，治"弱联盟虚高"）
    PRIOR_W：混合里 FIFA先验 的占比（近况占 1-PRIOR_W；越大→越信先验、越不被近况带偏）
    FORM_CLAMP：近况攻防的上下限（防止极端近况压过先验） */
-const FORM_OPP_EXP=0.85, PRIOR_W=0.72, FORM_CLAMP=[0.88,1.14], WC_CLAMP=[0.7,1.5];
+const FORM_OPP_EXP=1.3, PRIOR_W=0.85, FORM_CLAMP=[0.72,1.45], WC_CLAMP=[0.65,1.6];
 // 对手加权 + 赛事加权 + 时间衰减的近况强度
 function formStrength(fx, id){
   const done=(fx||[]).filter(f=>['FT','AET','PEN'].includes(f.fixture.status.short));
@@ -1242,7 +1244,7 @@ function formStrength(fx, id){
 }
 // 融合：本届世界杯数据(权重随场次上升) + FIFA先验 + 加权近况
 async function coreStrength(id, name, dbg){
-  const clamp=x=>Math.max(0.55, Math.min(1.85, x));
+  const clamp=x=>Math.max(0.5, Math.min(2.0, x));
   const prior=priorStrength(name);
   let wc=null, wcPlayed=0;
   try{
@@ -1358,8 +1360,9 @@ function predictMatch(iH,iA,stage){
   const apA=Math.min(0.55,penA.ap+lpA.ap), dpA=Math.min(0.55,penA.dp+lpA.dp);
   const attH=bH.att*(1-apH), defH=bH.def*(1-dpH);
   const attA=bA.att*(1-apA), defA=bA.def*(1-dpA);
-  const lH=Math.max(0.2, CONFIG.LEAGUE_AVG*attH/Math.max(0.3,defA)*CONFIG.HOME_ADV);
-  const lA=Math.max(0.2, CONFIG.LEAGUE_AVG*attA/Math.max(0.3,defH)/CONFIG.HOME_ADV);
+  const sp=CONFIG.MATCH_SPREAD||1;
+  const lH=Math.max(0.2, CONFIG.LEAGUE_AVG*Math.pow(attH/Math.max(0.3,defA),sp)*CONFIG.HOME_ADV);
+  const lA=Math.max(0.2, CONFIG.LEAGUE_AVG*Math.pow(attA/Math.max(0.3,defH),sp)/CONFIG.HOME_ADV);
   const out=Object.assign(predictLive(lH,lA,0,0,0), {penH,penA});
   if(stage==='ko') out.ko=knockout(lH,lA);
   return out;
@@ -1467,7 +1470,9 @@ function openMatchup(iH,iA,stage){
   const ready = mhLineupReady;
   const pr=predictMatch(iH,iA,stage);                  // 模型+阵容（未含赔率）；先算出来供锁定快照与展示用
   // 首发齐 → 固化为 final（含首发）；已有 prelim 预备锁也在此就地升级为 final，避免卡在"初步"
-  if(isLiveMatch && mhLineupReady && mhCurFixture && USE_SERVER && (!mhFrozen || mhFrozen.stage!=='final') && _lockState[mhCurFixture]!=='final'){
+  // 时间闸：仅"距开赛 <1h"才创建 final 锁（与 lockSweep 一致），避免 API 提前返回的"预测首发"过早触发锁定、把时间标盖早
+  const mhLeft = mhKickoffMs>0 ? (mhKickoffMs-Date.now()) : -1;
+  if(isLiveMatch && mhLineupReady && mhCurFixture && USE_SERVER && mhLeft>0 && mhLeft<=LOCK_WIN_MS && (!mhFrozen || mhFrozen.stage!=='final') && _lockState[mhCurFixture]!=='final'){
     mhFrozen={ o:(pr.a>=pr.d&&pr.a>=pr.b)?'H':(pr.b>=pr.d?'A':'D'),
       s:(pr.scores&&pr.scores[0]&&pr.scores[0][0])||'',
       h:teams[iH].nm, a:teams[iA].nm, probs:{h:pr.a,d:pr.d,a:pr.b}, scores:pr.scores, stage:'final', at:Date.now() };
@@ -1708,6 +1713,7 @@ async function fetchLineupFull(fixtureId, teamId, injMap, ageMap){   // 官方�
 let lineupPen={};                 // {6/7:{ap,dp}} 关键人物缺席折减
 let mhFrozen=null;                // 当前对阵若已锁定 → 固化快照
 let mhCurFixture=0;               // 当前对阵 fixtureId
+let mhKickoffMs=0;                // 当前对阵开赛时刻(ms)：给自动锁定加"距开赛<1h"时间闸用
 let _mhPoll=null;                 // 对阵页轮询计时器
 const _keyCache={}, _lockState={};   // _lockState: fixtureId → 'prelim' | 'final'
 const POS1=p=>String(p||'M').trim().charAt(0).toUpperCase();   // G/D/M/F
@@ -1761,8 +1767,8 @@ async function applyLineupPenalties(iH, iA, hId, aId, startH, startA){
 function predictSnapshot(bH,bA,lpH,lpA){
   const aH=bH.att*(1-Math.min(0.55,lpH.ap)), dH=bH.def*(1-Math.min(0.55,lpH.dp));
   const aA=bA.att*(1-Math.min(0.55,lpA.ap)), dA=bA.def*(1-Math.min(0.55,lpA.dp));
-  const lH=Math.max(0.2,CONFIG.LEAGUE_AVG*aH/Math.max(0.3,dA)*CONFIG.HOME_ADV);
-  const lA=Math.max(0.2,CONFIG.LEAGUE_AVG*aA/Math.max(0.3,dH)/CONFIG.HOME_ADV);
+  const lH=Math.max(0.2,CONFIG.LEAGUE_AVG*Math.pow(aH/Math.max(0.3,dA),CONFIG.MATCH_SPREAD||1)*CONFIG.HOME_ADV);
+  const lA=Math.max(0.2,CONFIG.LEAGUE_AVG*Math.pow(aA/Math.max(0.3,dH),CONFIG.MATCH_SPREAD||1)/CONFIG.HOME_ADV);
   const g=CONFIG.MAX_GOALS; let pH=0,pD=0,pA=0,tot=0; const cells=[];
   for(let i=0;i<=g;i++)for(let j=0;j<=g;j++){ const p=pois(i,lH)*pois(j,lA); tot+=p; if(i>j)pH+=p;else if(i===j)pD+=p;else pA+=p; cells.push([i+'-'+j,p]); }
   const sT=pH+pD+pA||1, a=pH/sT*100,d=pD/sT*100,b=pA/sT*100;
@@ -1846,6 +1852,7 @@ async function openMatchupLive(fixtureId){
   try{
     mhCurFixture=fixtureId; mhFrozen=null; lineupPen={};
     const fxs=await api(`/fixtures?id=${fixtureId}`); const fx=fxs[0];
+    mhKickoffMs=new Date(fx.fixture.date).getTime()||0;     // 记下开赛时刻，供 final 锁时间闸判断
     const H=fx.teams.home, A=fx.teams.away;
     const stage=/group|小组/i.test((fx.league&&fx.league.round)||'')?'group':'ko';
     const arch=await loadPredArchive();
@@ -1977,8 +1984,8 @@ async function loadPredArchive(){
 // 用本站模型对一场比赛给出 胜平负 + 最可能比分（与赛前对阵同口径：含主场系数）
 async function predictFixtureModel(hId,hName,aId,aName){
   const [bH,bA]=await Promise.all([coreStrength(hId,hName),coreStrength(aId,aName)]);
-  const lH=Math.max(0.2, CONFIG.LEAGUE_AVG*bH.att/Math.max(0.3,bA.def)*CONFIG.HOME_ADV);
-  const lA=Math.max(0.2, CONFIG.LEAGUE_AVG*bA.att/Math.max(0.3,bH.def)/CONFIG.HOME_ADV);
+  const lH=Math.max(0.2, CONFIG.LEAGUE_AVG*Math.pow(bH.att/Math.max(0.3,bA.def),CONFIG.MATCH_SPREAD||1)*CONFIG.HOME_ADV);
+  const lA=Math.max(0.2, CONFIG.LEAGUE_AVG*Math.pow(bA.att/Math.max(0.3,bH.def),CONFIG.MATCH_SPREAD||1)/CONFIG.HOME_ADV);
   const g=CONFIG.MAX_GOALS; let pH=0,pD=0,pA=0,best=-1,bi=0,bj=0;
   for(let i=0;i<=g;i++)for(let j=0;j<=g;j++){ const p=pois(i,lH)*pois(j,lA); if(i>j)pH+=p; else if(i===j)pD+=p; else pA+=p; if(p>best){best=p;bi=i;bj=j;} }
   const o = (pH>=pD&&pH>=pA)?'H':(pA>=pD?'A':'D');

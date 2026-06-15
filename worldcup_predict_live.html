@@ -1063,7 +1063,7 @@ const autoBase = (typeof location!=='undefined' && /^https?:$/.test(location.pro
 const SERVER_BASE = (CONFIG.SERVER_BASE && CONFIG.SERVER_BASE.length) ? CONFIG.SERVER_BASE : (CONFIG.API_KEY.length ? '' : autoBase);
 const USE_SERVER = CONFIG.USE_LIVE && SERVER_BASE.length > 0 && CONFIG.API_KEY.length === 0;   // 走共享代理(含自动同源)
 const LIVE = CONFIG.USE_LIVE && (USE_SERVER || CONFIG.API_KEY.length > 0);                      // 实时(代理或直连)
-const BUILD='2026-06-r27';
+const BUILD='2026-06-r28';
 try{ console.log('[胜率预测] BUILD='+BUILD+' | USE_LIVE='+CONFIG.USE_LIVE+' | origin='+(typeof location!=='undefined'?location.origin:'-')+' | SERVER_BASE='+SERVER_BASE+' | USE_SERVER='+USE_SERVER+' | LIVE='+LIVE); }catch(_){}
 let liveScoreList = null;           // 实时模型算出的比分榜，供 topScores 使用
 
@@ -1788,10 +1788,11 @@ async function lockMatch(fx, wantStage){
     let ln; try{ ln=await api(`/fixtures/lineups?fixture=${id}`); }catch(e){ ln=null; }
     const sH=(ln||[]).find(x=>x.team&&x.team.id===H.id), sA=(ln||[]).find(x=>x.team&&x.team.id===A.id);
     const xiH=sH&&sH.startXI?sH.startXI.map(e=>e.player.id):[], xiA=sA&&sA.startXI?sA.startXI.map(e=>e.player.id):[];
-    if(xiH.length && xiA.length){                                            // 首发齐 → 含阵容 final
+    const subsH=(sH&&sH.substitutes&&sH.substitutes.length)||0, subsA=(sA&&sA.substitutes&&sA.substitutes.length)||0;
+    if(xiH.length && xiA.length && subsH && subsA){                          // 首发+替补都齐 → 含阵容 final
       const [kpH,kpA]=await Promise.all([teamKeyPlayers(H.id),teamKeyPlayers(A.id)]);
       lpH=computeLineupPenalty(kpH,xiH); lpA=computeLineupPenalty(kpA,xiA); stage='final';
-    } else if(ex){ return; }                                                 // 首发未齐但已有 prelim → 等下次升级
+    } else if(ex){ return; }                                                 // 首发/替补未齐但已有 prelim → 等下次升级
   }
   const [bH,bA]=await Promise.all([teamBaseLive(H.id,H.name),teamBaseLive(A.id,A.name)]);
   const snap=predictSnapshot(bH,bA,lpH,lpA); snap.h=H.name; snap.a=A.name; snap.stage=stage;
@@ -1843,7 +1844,7 @@ async function refreshMatchup(fixtureId, H, A, stage){
   squads[6]=lH.start; squads[7]=lA.start;
   squadSubs[6]=lH.subs; squadSubs[7]=lA.subs;
   squadOut[6]=outH;     squadOut[7]=outA;
-  mhLineupReady = !!(lH.start && lH.start.length && lA.start && lA.start.length);
+  mhLineupReady = !!(lH.start && lH.start.length && lA.start && lA.start.length && lH.subs && lH.subs.length && lA.subs && lA.subs.length);   // 首发+替补 双方都齐 才算就绪
   if(mhLineupReady){ await applyLineupPenalties(6,7,H.id,A.id,lH.start,lA.start); }  // 阵容影响数值
   else { lineupPen[6]={ap:0,dp:0}; lineupPen[7]={ap:0,dp:0}; }
   openMatchup(6,7,stage);

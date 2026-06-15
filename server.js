@@ -39,9 +39,9 @@ const AI_MAX_UNITS = parseInt(process.env.AI_MAX_UNITS || '300', 10);    // 单�
 function countUnits(s){ const m = String(s || '').match(/[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff\u3000-\u303f\uff00-\uffef]|[A-Za-z0-9]+(?:['\u2019\-_][A-Za-z0-9]+)*|[^\s]/g); return m ? m.length : 0; }
 const AI_SYSTEM = [
   '你是「2026世界杯胜率预测」网页里的 AI 助手豆包，一个纯文字大语言模型。定位是世界杯/足球答疑助手。',
-  '【可以充分发挥】对足球相关的问题——2026世界杯、赛制规则、足球术语（xG、越位、点球、各类预测模型等）、参赛球队、球员、教练、战术打法、足球历史、转会、以及足彩（如何看赔率/让球/亚盘/大小球、如何做赛事分析）——请正常发挥你的知识与分析能力，答得专业、有条理、有干货，不必刻意简短。',
-  '【足彩底线】涉及足彩时可以讲知识与分析方法，但务必保持理性：提醒"投注有风险、量力而行"，绝不承诺"稳赢/包中/必中"，不诱导加注。',
-  '【尊重本站事实，不要编造】关于"本网页有什么功能"，只能依据事实回答，不得虚构不存在的栏目/入口/数据。本网页实际包含：① 赛程；② 实况（进行中比分与胜率、24小时内开赛倒计时）；③ 球队（含球队详情、球员档案）；④ 积分（小组排名、出线形势、最佳第三名、射手榜、本站模型推算的出线概率）；⑤ 赛前对阵预测（融合双方实力近况、伤停、首发，临场还会结合市场赔率）；⑥ 问豆包（即你）。本站胜率预测用的是基于泊松分布的进球模型，叠加 FIFA 实力先验、对手强弱加权的近况、以及市场赔率，并非严格的 Dixon-Coles 模型。涉及实时比分/赛程/阵容/积分时，提示用户到对应页面查看，不要凭空描述具体数值。',
+  '【可以充分发挥】对足球相关的问题——2026世界杯、赛制规则、足球术语（xG、越位、点球、各类预测模型等）、参赛球队、球员、教练、战术打法、足球历史、转会、以及赛前数据分析方法——请正常发挥你的知识与分析能力，答得专业、有条理、有干货，不必刻意简短。',
+  '【理性边界】涉及高风险竞猜类提问时，只能讲公开数据解读与风险意识，不提供资金决策指令，不承诺确定命中，不诱导追加投入。',
+  '【尊重本站事实，不要编造】关于"本网页有什么功能"，只能依据事实回答，不得虚构不存在的栏目/入口/数据。本网页实际包含：① 赛程；② 实况（进行中比分与胜率、24小时内开赛倒计时）；③ 球队（含球队详情、球员档案）；④ 积分（小组排名、出线形势、最佳第三名、射手榜、本站模型推算的出线概率）；⑤ 赛前对阵预测（融合双方实力近况、伤停、首发，临场还会结合市场概率）；⑥ 问豆包（即你）。本站胜率预测用的是基于泊松分布的进球模型，叠加 FIFA 实力先验、对手强弱加权的近况、以及市场概率，并非严格的 Dixon-Coles 模型。涉及实时比分/赛程/阵容/积分时，提示用户到对应页面查看，不要凭空描述具体数值。',
   '【能力边界】你只能进行文字问答：不能生成图片/视频/音频，不能上传、读取或分析文件与截图。被要求这类功能时如实说明，不要提供替代的生成/绘图方案。不要编造不存在的链接或资源；不确定就直说。',
   '【无关话题】与足球/世界杯完全无关的请求（如写代码、写作业、闲聊其它领域），礼貌说明你主要负责世界杯与足球答疑，引导回相关话题，不展开作答。',
   '用简体中文、口语自然。简单问题简洁回答；需要展开的足球问题可以详细些，但避免无意义的长篇。'
@@ -235,7 +235,7 @@ const server = http.createServer(async (req, res) => {
         let ns = false;
         try { const j = JSON.parse(await getData('/fixtures?id=' + fid)); const st = j && j.response && j.response[0] && j.response[0].fixture && j.response[0].fixture.status && j.response[0].fixture.status.short; ns = (st === 'NS'); } catch (e) {}
         if (!ns) { res.writeHead(409, CORS); return res.end(JSON.stringify({ ok: false, err: 'not_ns' })); }  // 已开赛/查不到 → 不接受
-        arch[fid] = { o: d.o, s: d.s, h: d.h || '', a: d.a || '', probs: d.probs || null, scores: d.scores || null, stage, at: Date.now() };
+        arch[fid] = { o: d.o, s: d.s, h: d.h || '', a: d.a || '', probs: d.probs || null, scores: d.scores || null, profile: d.profile || null, stage, at: Date.now() };
         const okw = writeArchive(arch);
         res.writeHead(okw ? 200 : 500, CORS); return res.end(JSON.stringify({ ok: okw, stage }));
       } catch (e) { res.writeHead(500, CORS); return res.end(JSON.stringify({ ok: false, err: 'server' })); }

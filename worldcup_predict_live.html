@@ -141,6 +141,7 @@ canvas{width:100%; height:128px; display:block}
 .fix .row.win .sc-mini, .fix .row.win{color:var(--txt)}
 .fix .vn{font-size:10px; color:var(--faint); margin-top:1px; letter-spacing:.02em}
 .fix .meta{text-align:right; display:flex; flex-direction:column; gap:6px; align-items:flex-end}
+.fix.is-focus{border-color:rgba(198,255,68,.42); box-shadow:0 0 0 1px rgba(198,255,68,.08), 0 10px 30px rgba(0,0,0,.18)}
 .pill{font-size:9px; font-weight:700; letter-spacing:.08em; padding:3px 7px; border-radius:6px; text-transform:uppercase}
 .pill.live{background:rgba(255,77,94,.14); color:var(--live)}
 .pill.soon{background:rgba(255,255,255,.06); color:var(--muted)}
@@ -746,7 +747,7 @@ function show(v){
   if(v==='standings') renderStandings();
   if(v==='sched' && LIVE && typeof renderScheduleLive==='function'){
     if(!document.querySelector('#v-sched .fix[data-fid]')) renderScheduleLive();   // 尚未渲染 → 先渲染
-    else { schedLiveMerge(); schedFullReconcile(); }                                // 已渲染 → 原地刷新
+    else { schedLiveMerge(); schedFullReconcile(); focusScheduleAnchor(); }         // 已渲染 → 原地刷新并定位最近比赛
     startSchedPollers();
   }
 }
@@ -1068,7 +1069,7 @@ const autoBase = (typeof location!=='undefined' && /^https?:$/.test(location.pro
 const SERVER_BASE = (CONFIG.SERVER_BASE && CONFIG.SERVER_BASE.length) ? CONFIG.SERVER_BASE : (CONFIG.API_KEY.length ? '' : autoBase);
 const USE_SERVER = CONFIG.USE_LIVE && SERVER_BASE.length > 0 && CONFIG.API_KEY.length === 0;   // 走共享代理(含自动同源)
 const LIVE = CONFIG.USE_LIVE && (USE_SERVER || CONFIG.API_KEY.length > 0);                      // 实时(代理或直连)
-const BUILD='2026-06-r30-context-score';
+const BUILD='2026-06-r31-schedule-focus';
 try{ console.log('[胜率预测] BUILD='+BUILD+' | USE_LIVE='+CONFIG.USE_LIVE+' | origin='+(typeof location!=='undefined'?location.origin:'-')+' | SERVER_BASE='+SERVER_BASE+' | USE_SERVER='+USE_SERVER+' | LIVE='+LIVE); }catch(_){}
 let liveScoreList = null;           // 实时模型算出的比分榜，供 topScores 使用
 
@@ -2505,6 +2506,7 @@ function applySchedFixture(f){
   if(!el) return false;
   const dt=new Date(f.fixture.date), cat=schedCat(f,dt);
   const isLive=cat==='live', done=cat==='done';
+  el.dataset.kick=String(dt.getTime());
   const sH=f.goals.home, sA=f.goals.away, hasS=(sH!=null&&sA!=null);
   const rows=el.querySelectorAll('.match > .row');
   if(rows[0]){ const sc=rows[0].querySelector('.sc-mini'); if(sc) sc.textContent=hasS?sH:''; rows[0].classList.toggle('win', done&&hasS&&sH>sA); }
@@ -2521,6 +2523,31 @@ function applySchedFixture(f){
   return true;
 }
 function schedVisible(){ const v=document.getElementById('v-sched'); return v && v.classList.contains('on'); }
+function nearestScheduleCard(){
+  const cards=[...document.querySelectorAll('#v-sched .fix[data-kick]')];
+  if(!cards.length) return null;
+  const now=Date.now(), byKick=(a,b)=>Number(a.dataset.kick||0)-Number(b.dataset.kick||0);
+  const live=cards.filter(el=>el.dataset.cat==='live'||el.dataset.cat==='imminent').sort(byKick)[0];
+  if(live) return live;
+  const upcoming=cards.filter(el=>el.dataset.cat!=='done' && Number(el.dataset.kick||0)>=now).sort(byKick)[0];
+  if(upcoming) return upcoming;
+  return cards.filter(el=>el.dataset.cat!=='done').sort(byKick)[0] || cards[cards.length-1];
+}
+function centerScheduleCard(el, behavior){
+  const scroller=document.getElementById('body');
+  if(!el || !scroller) return;
+  const sr=scroller.getBoundingClientRect(), er=el.getBoundingClientRect();
+  const delta=(er.top+er.height/2)-(sr.top+sr.height/2);
+  scroller.scrollTo({top:Math.max(0,scroller.scrollTop+delta), behavior:behavior||'smooth'});
+}
+function focusScheduleAnchor(){
+  if(!schedVisible()) return;
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    const target=nearestScheduleCard();
+    document.querySelectorAll('#v-sched .fix.is-focus').forEach(el=>el.classList.remove('is-focus'));
+    if(target){ target.classList.add('is-focus'); centerScheduleCard(target,'smooth'); }
+  }));
+}
 async function schedLiveMerge(){
   if(!LIVE || !schedVisible()) return;
   try{ const live=await api(`/fixtures?live=all&league=${CONFIG.LEAGUE_ID}&season=${CONFIG.SEASON}`); (live||[]).forEach(f=>applySchedFixture(f)); }catch(e){}
@@ -2555,7 +2582,7 @@ async function renderScheduleLive(){
         const cat=schedCat(f,dt), isLive=cat==='live', done=cat==='done';
         const sH=f.goals.home, sA=f.goals.away, hasS=(sH!=null&&sA!=null);
         const venue=(f.fixture.venue&&f.fixture.venue.name)?(f.fixture.venue.name+(f.fixture.venue.city?(' · '+f.fixture.venue.city):'')):'';
-        html+=`<div class="fix${isLive?' is-live':''}" data-fid="${f.fixture.id}" data-cat="${cat}" onclick="openMatchupLive(${f.fixture.id})">
+        html+=`<div class="fix${isLive?' is-live':''}" data-fid="${f.fixture.id}" data-cat="${cat}" data-kick="${dt.getTime()}" onclick="openMatchupLive(${f.fixture.id})">
           <div class="time">${hhmm}<small>${roundCN(f.league.round)}</small></div>
           <div class="match">
             <div class="row${done&&hasS&&sH>sA?' win':''}"><span class="fl">${mk(f.teams.home.logo)}</span>${f.teams.home.name}<span class="sc-mini">${hasS?sH:''}</span></div>
@@ -2569,6 +2596,7 @@ async function renderScheduleLive(){
     });
     document.getElementById('v-sched').innerHTML=html;
     wireCountdowns(document.getElementById('v-sched'));
+    focusScheduleAnchor();
   }catch(e){ console.warn('实时赛程获取失败，保留演示赛程：',e); }
 }
 if(typeof location!=='undefined' && location.hash==='#genpred'){ initGenPred(); }

@@ -141,7 +141,6 @@ canvas{width:100%; height:128px; display:block}
 .fix .row.win .sc-mini, .fix .row.win{color:var(--txt)}
 .fix .vn{font-size:10px; color:var(--faint); margin-top:1px; letter-spacing:.02em}
 .fix .meta{text-align:right; display:flex; flex-direction:column; gap:6px; align-items:flex-end}
-.fix.is-focus{border-color:rgba(198,255,68,.42); box-shadow:0 0 0 1px rgba(198,255,68,.08), 0 10px 30px rgba(0,0,0,.18)}
 .pill{font-size:9px; font-weight:700; letter-spacing:.08em; padding:3px 7px; border-radius:6px; text-transform:uppercase}
 .pill.live{background:rgba(255,77,94,.14); color:var(--live)}
 .pill.soon{background:rgba(255,255,255,.06); color:var(--muted)}
@@ -338,16 +337,6 @@ canvas{width:100%; height:128px; display:block}
 .mh-prelim{background:rgba(255,178,62,.09); border:1px solid rgba(255,178,62,.35); border-radius:12px; padding:12px 14px; font-size:12.5px; line-height:1.7; color:var(--warn); margin-bottom:12px}
 .mh-prelim b{color:#ffd089}
 .mh-ready{background:rgba(198,255,68,.07); border:1px solid rgba(198,255,68,.28); border-radius:12px; padding:10px 14px; font-size:12px; line-height:1.6; color:var(--a); margin-bottom:12px}
-.match-read{background:rgba(77,168,255,.07); border:1px solid rgba(77,168,255,.25); border-radius:12px; padding:11px 13px; margin-bottom:10px; font-size:12.5px; line-height:1.75; color:var(--muted)}
-.match-read b{color:var(--txt)}
-.match-read .mr-title{color:var(--b); font-weight:700}
-.mread-tags{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px}
-.mread-tags span{border:1px solid rgba(255,255,255,.09); background:rgba(255,255,255,.04); color:var(--faint); border-radius:7px; padding:2px 6px; font-size:10.5px; line-height:1.35}
-.expert-actions{margin:10px 0 2px}
-.expert-btn{width:100%; min-height:42px; border:1px solid rgba(198,255,68,.32); border-radius:12px; background:linear-gradient(90deg,rgba(198,255,68,.14),rgba(77,168,255,.10)); color:var(--txt); font-family:var(--ui); font-size:13px; font-weight:700; cursor:pointer}
-.expert-btn:active{transform:scale(.99)}
-.expert-btn.cached{border-color:rgba(77,168,255,.44); background:linear-gradient(90deg,rgba(77,168,255,.14),rgba(198,255,68,.08))}
-.expert-btn:disabled{opacity:.72; cursor:wait}
 /* ---- 积分榜 / 出线 / 射手榜 ---- */
 .st-tabs{display:flex; gap:8px; margin:2px 0 14px}
 .st-tabs button{flex:1; background:var(--surface); border:1px solid rgba(255,255,255,.08); color:var(--muted); font-family:var(--ui); font-size:13px; padding:9px 0; border-radius:10px; cursor:pointer}
@@ -435,7 +424,7 @@ canvas{width:100%; height:128px; display:block}
           </div>
 
           <div id="socialBar" class="social-bar">
-            <span class="sb-wx" id="sbWx">观赛交流 + 微信 <b>HJH_ZSH_ZQ</b>（点击复制）</span>
+            <span class="sb-wx" id="sbWx">竞猜交流 + 微信 <b>HJH_ZSH_ZQ</b>（点击复制）</span>
             <span class="sb-online" id="sbOnline"><i class="sb-dot"></i>在线 <b id="sbOnlineN">—</b> 人</span>
           </div>
 
@@ -642,9 +631,12 @@ canvas{width:100%; height:128px; display:block}
           <div class="section-t">可用性影响</div>
           <div id="mhImpact"></div>
 
-          <div class="section-t">比分推荐 · 稳健 / 进取 / 防冷</div>
+          <div class="section-t">模型比分 · 稳健 / 进取 / 防冷</div>
           <div class="scores" id="mhScores"></div>
-          <div class="expert-actions"><button class="expert-btn" id="mhAiExplain" onclick="requestMatchAiRead()">系统赛前解读</button></div>
+
+          <div class="section-t" id="mhExpertTitle">AI 球评 · 主推 / 次选 / 冷门</div>
+          <div id="mhExpertWrap"><div class="scores" id="mhExpert"></div><div id="mhExpertNote"></div></div>
+          <div id="mhMarket"></div>
 
           <div class="section-t">预计出场阵容 · 点击看球员</div>
           <div class="lineups">
@@ -730,8 +722,8 @@ canvas{width:100%; height:128px; display:block}
           <button id="aiSend" aria-label="发送">↑</button>
         </div>
         <div class="ai-foot">
-          <span id="aiCount">0/300</span> · 内容由 AI 生成，作为观赛数据参考<br>
-          <span class="ai-wx" id="aiWx">观赛交流 · 加微信 <b>HJH_ZSH_ZQ</b>（点击复制）</span>
+          <span id="aiCount">0/300</span> · 内容由 AI 生成，仅供参考<br>
+          <span class="ai-wx" id="aiWx">竞猜交流 · 加微信 <b>HJH_ZSH_ZQ</b>（点击复制）</span>
         </div>
       </section>
     </div>
@@ -752,8 +744,8 @@ function show(v){
   if(v==='live'){ requestAnimationFrame(drawTrend); if(typeof renderUpcoming24==='function') renderUpcoming24(); }
   if(v==='standings') renderStandings();
   if(v==='sched' && LIVE && typeof renderScheduleLive==='function'){
-    if(!document.querySelector('#v-sched .fix[data-fid]')) renderScheduleLive();   // 尚未渲染 → 先渲染
-    else { schedLiveMerge(); schedFullReconcile(); focusScheduleAnchor(); }         // 已渲染 → 原地刷新并定位最近比赛
+    if(!document.querySelector('#v-sched .fix[data-fid]')) renderScheduleLive().then(()=>scrollToNextMatch());   // 尚未渲染 → 渲染后定位
+    else { schedLiveMerge(); schedFullReconcile(); scrollToNextMatch(); }                                        // 已渲染 → 刷新并定位
     startSchedPollers();
   }
 }
@@ -1066,7 +1058,7 @@ const CONFIG = {
   HOME_ADV: 1.05,                   // 主场进攻系数（世界杯多为中立场，仅保留轻微指定主队效应）
   LEAGUE_AVG: 1.35,                 // 单队场均进球基准
   QUAL_SPREAD: 1.0,                 // 出线测算弹性指数：1.0=不额外放大(强弱差已做进攻防评级本身)
-  MATCH_SPREAD: 1.12,               // 赛前对阵比分弹性指数：>1 会放大强弱差，避免强弱悬殊局过度保守
+  MATCH_SPREAD: 1.0,                // 赛前对阵比分弹性指数：1.0=不额外放大(强弱差已做进攻防评级本身)
   MAX_GOALS: 6,
   FORM_N: 10                        // 球员"近期表现"展示的场次数（可调大，如 15/20）
 };
@@ -1075,7 +1067,7 @@ const autoBase = (typeof location!=='undefined' && /^https?:$/.test(location.pro
 const SERVER_BASE = (CONFIG.SERVER_BASE && CONFIG.SERVER_BASE.length) ? CONFIG.SERVER_BASE : (CONFIG.API_KEY.length ? '' : autoBase);
 const USE_SERVER = CONFIG.USE_LIVE && SERVER_BASE.length > 0 && CONFIG.API_KEY.length === 0;   // 走共享代理(含自动同源)
 const LIVE = CONFIG.USE_LIVE && (USE_SERVER || CONFIG.API_KEY.length > 0);                      // 实时(代理或直连)
-const BUILD='2026-06-r34-system-match-read';
+const BUILD='2026-06-r31';
 try{ console.log('[胜率预测] BUILD='+BUILD+' | USE_LIVE='+CONFIG.USE_LIVE+' | origin='+(typeof location!=='undefined'?location.origin:'-')+' | SERVER_BASE='+SERVER_BASE+' | USE_SERVER='+USE_SERVER+' | LIVE='+LIVE); }catch(_){}
 let liveScoreList = null;           // 实时模型算出的比分榜，供 topScores 使用
 
@@ -1091,100 +1083,37 @@ function lambdas(strH,strA){
 /* 比赛中：对"剩余时间还会进的球"建模，叠加当前比分，输出 胜平负 + 比分榜 */
 function mk(logo){ return logo ? `<img class="lg" src="${logo}" alt="" onerror="this.outerHTML='⚽'">` : '⚽'; }
 // —— 比分策略层：从概率矩阵挑「稳健/进取/防冷」三档（精算+评球口径，不扭曲概率）——
-function scoreKey(c, sep){ sep=sep||':'; return c.h+sep+c.a; }
-function scoreOutcome(c){ return c.h>c.a?'H':(c.h<c.a?'A':'D'); }
-function matchProfile(pH,pD,pA,lH,lA,stage){
-  const s=(pH+pD+pA)||1, hp=pH/s*100, dp=pD/s*100, ap=pA/s*100;
-  const favH=hp>=ap, favWin=Math.max(hp,ap), gap=Math.abs(hp-ap);
-  const favLambda=favH?lH:lA, dogLambda=favH?lA:lH, lambdaGap=Math.abs(lH-lA), total=lH+lA;
-  const ko=stage==='ko', live=stage==='live';
-  let label='略占上风', tone='优势方略高一档，但仍需防平局和效率波动。', minAggMargin=2, minAggGoals=2, open=false;
-  if(favWin>=78 || (favWin>=72 && lambdaGap>=1.05)){
-    label='实力悬殊';
-    tone='强队优势明显，普通泊松的低比分会压低大胜场景，需要保留 3 球以上尾部比分。';
-    minAggMargin=ko?2:3; minAggGoals=3;
-  }else if(favWin>=64 || lambdaGap>=0.70){
-    label='强弱明显';
-    tone='优势方胜面较清楚，比分推荐应同时覆盖 2 球优势和弱队进球的分支。';
-    minAggMargin=2; minAggGoals=2;
-  }else if(total>=3.05 && gap<=18){
-    label='开放对攻';
-    tone='双方进球期望偏高，比分推荐需要给到 3 球以上的开放场景。';
-    minAggMargin=1; minAggGoals=2; open=true;
-  }else if(dp>=29 && gap<=12){
-    label='均势谨慎';
-    tone='双方差距较小，平局和一球小胜仍是主线，进取比分只作次级分支。';
-    minAggMargin=1; minAggGoals=2;
-  }
-  if(ko){
-    label='淘汰赛 · '+label;
-    tone+=' 淘汰赛会天然压低冒险强度，领先后控节奏的可能性更高。';
-  }else if(!live && favWin>=68 && total>=2.85){
-    tone+=' 小组赛阶段若存在净胜球需求，大比分候选应比普通联赛更靠前。';
-  }
-  const factors=[];
-  factors.push('优势方胜率 '+Math.round(favWin)+'%');
-  factors.push('预期总进球 '+total.toFixed(2));
-  factors.push('进球差 '+Math.abs(favLambda-dogLambda).toFixed(2));
-  if(open) factors.push('开放度偏高');
-  if(favWin>=72) factors.push('强弱差明显');
-  return {label,tone,factors,favH,favWin,gap,total,lambdaGap,minAggMargin,minAggGoals,open,ko};
-}
-function pickScore(sorted, used, pred){
-  for(const c of sorted){ const k=scoreKey(c); if(!used.has(k) && pred(c)) return c; }
-  return null;
-}
-function recommendScores(cells, pH, pD, pA, lH, lA, stage){
+function recommendScores(cells, pH, pA){
   const ssum=cells.reduce((t,c)=>t+c.p,0)||1;
   const sorted=[...cells].sort((x,y)=>y.p-x.p);
-  const profile=matchProfile(pH,pD,pA,lH,lA,stage);
-  const favH = profile.favH;                            // 占优方(按胜率)
+  const favH = pH>=pA;                                  // 占优方(按胜率)
   const favWins = c => favH ? c.h>c.a : c.a>c.h;
   const favMar  = c => favH ? c.h-c.a : c.a-c.h;
-  const favGoals= c => favH ? c.h : c.a;
-  const totalGoals=c => c.h+c.a;
+  const key = c => c.h+':'+c.a;
   const used=new Set();
-  let anchor = profile.favWin>=57 ? pickScore(sorted, used, c=>favWins(c)) : null;
-  anchor = anchor || sorted[0]; used.add(scoreKey(anchor));             // 稳健：主线剧本最可能比分
+  const pick=pred=>{ for(const c of sorted){ if(!used.has(key(c)) && pred(c)) return c; } return null; };
+  const anchor=sorted[0]; used.add(key(anchor));                       // 稳健：全局最可能(正常剧本)
   const aMar = favWins(anchor)? favMar(anchor) : 0;
-  let aggressive=null;
-  if(profile.label.includes('实力悬殊')){
-    aggressive = pickScore(sorted, used, c=>favWins(c)&&favMar(c)>=profile.minAggMargin&&favGoals(c)>=profile.minAggGoals)
-              || pickScore(sorted, used, c=>favWins(c)&&favMar(c)>=2&&favGoals(c)>=3);
-  }else if(profile.open){
-    aggressive = pickScore(sorted, used, c=>totalGoals(c)>=4)
-              || pickScore(sorted, used, c=>totalGoals(c)>=3&&scoreOutcome(c)!==scoreOutcome(anchor));
-  }else{
-    aggressive = pickScore(sorted, used, c=>favWins(c)&&favMar(c)>=Math.max(profile.minAggMargin,aMar+1)&&favGoals(c)>=profile.minAggGoals)
-              || pickScore(sorted, used, c=>favWins(c)&&favMar(c)>aMar);
-  }
-  aggressive = aggressive || pickScore(sorted, used, c=>favWins(c)) || pickScore(sorted, used, ()=>true);
-  if(aggressive) used.add(scoreKey(aggressive));
-  const upsetPred = profile.gap<=12
-    ? (c=>scoreOutcome(c)!==scoreOutcome(anchor))
-    : (c=>!favWins(c));
-  let upset = pickScore(sorted, used, upsetPred)
-           || pickScore(sorted, used, c=>scoreOutcome(c)==='D')
-           || pickScore(sorted, used, ()=>true);                         // 防冷：占优方不胜或均势下的替代赛果
-  if(upset) used.add(scoreKey(upset));
-  const fmt = c => c ? [scoreKey(c), +((c.p/ssum*100).toFixed(1))] : ['—',0];
-  return { favH, profile, scores:[fmt(anchor), fmt(aggressive), fmt(upset)] };
+  const aggressive = pick(c=>favWins(c)&&favMar(c)>=Math.max(2,aMar+1)) // 进取：占优方更大净胜球里最可能
+                  || pick(c=>favWins(c)&&favMar(c)>aMar)
+                  || pick(c=>favWins(c)) || pick(()=>true);
+  if(aggressive) used.add(key(aggressive));
+  const upset = pick(c=>!favWins(c)) || pick(()=>true);                // 防冷：占优方不胜(平/冷)里最可能
+  if(upset) used.add(key(upset));
+  const fmt = c => c ? [key(c), Math.round(c.p/ssum*100)] : ['—',0];
+  return { favH, scores:[fmt(anchor), fmt(aggressive), fmt(upset)] };
 }
 // —— 比赛类型识别：从胜率与进球期望派生剧本标签 ——
 function matchType(pH,pD,pA,lH,lA,stage){
-  return matchProfile(pH,pD,pA,lH,lA,stage).label;
+  const favWin=Math.max(pH,pA), gap=Math.abs(pH-pA);
+  let t;
+  if(favWin>=78)      t='实力悬殊';
+  else if(favWin>=60) t='强弱明显';
+  else if(gap<=12)    t='势均力敌';
+  else                t='略占上风';
+  return (stage==='ko'?'淘汰赛 · ':'')+t;
 }
-function scoreModelFromLambdas(lH,lA,stage){
-  const g=CONFIG.MAX_GOALS; let pH=0,pD=0,pA=0; const cells=[];
-  for(let i=0;i<=g;i++)for(let j=0;j<=g;j++){
-    const p=pois(i,lH)*pois(j,lA);
-    if(i>j)pH+=p; else if(i===j)pD+=p; else pA+=p;
-    cells.push({h:i,a:j,p});
-  }
-  const sT=pH+pD+pA||1, rec=recommendScores(cells,pH,pD,pA,lH,lA,stage);
-  return {a:pH/sT*100,d:pD/sT*100,b:pA/sT*100,scores:rec.scores,profile:rec.profile,favH:rec.favH,lH,lA};
-}
-function predictLive(lA,lB,curA,curB,minute,stage){
+function predictLive(lA,lB,curA,curB,minute){
   const rem=Math.max(0,(90-minute))/90;
   const M=matrix(lA*rem, lB*rem);
   let a=0,d=0,b=0;
@@ -1195,8 +1124,8 @@ function predictLive(lA,lB,curA,curB,minute,stage){
   const s=(a+d+b)||1;
   const cells=[];
   for(let i=0;i<M.length;i++)for(let j=0;j<M.length;j++)cells.push({h:curA+i, a:curB+j, p:M[i][j]});
-  const rec=recommendScores(cells, a, d, b, lA, lB, stage||'live');      // 稳健/进取/防冷（用胜负概率定占优方）
-  return {a:a/s*100, d:d/s*100, b:b/s*100, scores:rec.scores, favH:rec.favH, profile:rec.profile, lH:lA, lA:lB};
+  const rec=recommendScores(cells, a, b);              // 稳健/进取/防冷（用胜负概率定占优方）
+  return {a:a/s*100, d:d/s*100, b:b/s*100, scores:rec.scores, favH:rec.favH, lH:lA, lA:lB};
 }
 
 /* —— 数据接口网关（缓存 + 每日额度管理 + 失败回退演示）—— */
@@ -1411,7 +1340,7 @@ async function liveStats(fixtureId){
 
 /* ===================== 赛前对阵 · 重要度权重 · 伤停折减 ===================== */
 let matchupTeams=[1,3];                 // 当前对阵的两队下标
-let marketProbs=null;                     // 当前对阵的市场概率 {h,d,a}（归一后），无则 null
+let marketProbs=null;                     // 当前对阵的市场赔率概率 {h,d,a}（去水后），无则 null
 let mhLineupReady=false;                 // 该场是否已拿到真实首发名单（决定初步/正式预测）
 let playerOriginFn=()=>show('teams');   // 球员页返回去向
 
@@ -1467,7 +1396,7 @@ function predictMatch(iH,iA,stage){
   const sp=CONFIG.MATCH_SPREAD||1;
   const lH=Math.max(0.2, CONFIG.LEAGUE_AVG*Math.pow(attH/Math.max(0.3,defA),sp)*CONFIG.HOME_ADV);
   const lA=Math.max(0.2, CONFIG.LEAGUE_AVG*Math.pow(attA/Math.max(0.3,defH),sp)/CONFIG.HOME_ADV);
-  const out=Object.assign(predictLive(lH,lA,0,0,0,stage), {penH,penA});
+  const out=Object.assign(predictLive(lH,lA,0,0,0), {penH,penA});
   if(stage==='ko') out.ko=knockout(lH,lA);
   return out;
 }
@@ -1490,49 +1419,6 @@ const ST_MAP={fit:['健康','st-fit'],doubt:['出场存疑','st-doubt'],inj:['�
 const POS_MAP={GK:['门将','p-gk'],DF:['后卫','p-df'],MF:['中场','p-mf'],FW:['前锋','p-fw']};
 const ST_COLOR={fit:'var(--a)',doubt:'var(--warn)',inj:'var(--live)',sus:'var(--muted)'};
 const ST_SHORT={doubt:'存疑',inj:'伤缺',sus:'停赛'};
-let currentMatchAiContext=null;
-let currentMatchAiRead=null;
-let matchAiPendingKey='';
-const MATCH_READ_WINDOW_MS=24*60*60*1000;
-
-function matchAiPhase(ctx){ return ctx&&ctx.match&&ctx.match.lineupReady ? 'final' : 'prelim'; }
-function matchAiCacheKey(ctx){
-  if(!ctx||!ctx.match||!ctx.match.fixtureId) return '';
-  return 'match-ai-'+ctx.match.fixtureId+'-'+matchAiPhase(ctx);
-}
-function matchAiWindowState(ctx){
-  const k=ctx&&ctx.match&&Number(ctx.match.kickoffMs||0);
-  if(!k) return 'ready';
-  const left=k-Date.now();
-  if(left<=0) return 'closed';
-  if(left>MATCH_READ_WINDOW_MS) return 'early';
-  return 'ready';
-}
-function refreshMatchAiButton(ctx){
-  const btn=document.getElementById('mhAiExplain');
-  if(!btn) return;
-  const key=ctx?matchAiCacheKey(ctx):'';
-  btn.dataset.aiKey=key;
-  btn.disabled=false;
-  btn.classList.remove('cached');
-  if(key && matchAiPendingKey===key){
-    btn.textContent='系统解读准备中...';
-    btn.disabled=true;
-    return;
-  }
-  if(currentMatchAiRead && currentMatchAiRead.key===key && currentMatchAiRead.answer){
-    btn.textContent=matchAiPhase(ctx)==='final'?'查看最终阵容解读':'查看系统赛前解读';
-    btn.classList.add('cached');
-  }else if(matchAiWindowState(ctx)==='early'){
-    btn.textContent='赛前24小时内生成解读';
-    btn.disabled=true;
-  }else if(matchAiWindowState(ctx)==='closed'){
-    btn.textContent='赛前解读窗口已关闭';
-    btn.disabled=true;
-  }else{
-    btn.textContent='同步系统赛前解读';
-  }
-}
 
 function setTri(pfx,a,d,b){
   const g=id=>document.getElementById(id);
@@ -1547,91 +1433,6 @@ function impactLine(i){
   const eff=[]; const ap=Math.round(pen.ap*100), dp=Math.round(pen.dp*100);
   if(ap)eff.push('进攻 −'+ap+'%'); if(dp)eff.push('防守 −'+dp+'%');
   return `<div class="imp warn">${t.nm}：${who} → ${eff.join('，')||'影响有限'}</div>`;
-}
-function playerBrief(list, limit){
-  return (list||[]).slice(0,limit||11).map(p=>{
-    const pos=(POS_MAP[p.pos]&&POS_MAP[p.pos][0])||p.pos||'球员';
-    const st=p.st&&p.st!=='fit'?(' '+(ST_SHORT[p.st]||p.st)):'';
-    const w=p.wt!=null?(' 重要度'+Math.round(playerWeight(p)*100)+'%'):'';
-    return `${p.role||p.name||'未知'}(${pos}${st}${w})`;
-  });
-}
-function absenceBrief(list, limit){
-  return (list||[]).slice(0,limit||8).map(o=>`${o.name}${o.sus?'(停赛)':'(缺阵)'}${o.reason?' '+o.reason:''}`);
-}
-function buildMatchAiContext(iH,iA,pr,stage,ready,lockedView,lockTs,profile){
-  const H=teams[iH], A=teams[iA], s0=(pr.scores||[]).map((s,idx)=>({type:['稳健','进取','防冷'][idx]||('候选'+(idx+1)), score:s[0], probability:s[1]}));
-  return {
-    source:'worldcup_matchup_panel',
-    instruction:'请从主观经验、概率校准和职业评球角度解释，不要给资金决策或确定性承诺。',
-    match:{
-      fixtureId:mhCurFixture||0,
-      kickoffMs:mhKickoffMs||0,
-      kickoffLocal:mhKickoffMs?new Date(mhKickoffMs).toLocaleString('zh-CN',{hour12:false}):'',
-      home:H.nm,
-      away:A.nm,
-      stage:stage==='ko'?'淘汰赛':'小组赛/常规赛程',
-      phase:ready?'final':'prelim',
-      lineupReady:!!ready,
-      locked:!!lockedView,
-      lockTime:lockTs||''
-    },
-    model:{
-      winDrawLose:{home:Math.round(pr.a), draw:Math.round(pr.d), away:Math.round(pr.b)},
-      scores:s0,
-      expectedGoals:{home:+(pr.lH||0).toFixed(2), away:+(pr.lA||0).toFixed(2), total:+(((pr.lH||0)+(pr.lA||0)).toFixed(2))},
-      profile:{label:(profile&&profile.label)||'', tone:(profile&&profile.tone)||'', factors:(profile&&profile.factors)||[]}
-    },
-    availability:[
-      {team:H.nm, penalty:availabilityPenalty(iH), starters:playerBrief(squads[iH],11), substitutes:playerBrief(squadSubs[iH],10), absences:absenceBrief(squadOut[iH],8)},
-      {team:A.nm, penalty:availabilityPenalty(iA), starters:playerBrief(squads[iA],11), substitutes:playerBrief(squadSubs[iA],10), absences:absenceBrief(squadOut[iA],8)}
-    ]
-  };
-}
-async function ensureSystemMatchRead(ctx, opts){
-  opts=opts||{};
-  if(!ctx||!ctx.match||!ctx.match.fixtureId) return null;
-  if(!USE_SERVER){ return null; }
-  const key=matchAiCacheKey(ctx);
-  if(currentMatchAiRead && currentMatchAiRead.key===key && currentMatchAiRead.answer){
-    if(opts.openWhenReady && typeof window.showDoubaoCached==='function') window.showDoubaoCached(currentMatchAiRead,key);
-    return currentMatchAiRead;
-  }
-  const win=matchAiWindowState(ctx);
-  if(win!=='ready'){ refreshMatchAiButton(ctx); return null; }
-  if(matchAiPendingKey===key){ if(opts.openWhenReady && typeof window.openDoubao==='function') window.openDoubao(); return null; }
-  matchAiPendingKey=key; refreshMatchAiButton(ctx);
-  try{
-    const r=await fetch((SERVER_BASE||'')+'/ai/match-read',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({fixtureId:ctx.match.fixtureId, phase:matchAiPhase(ctx), matchContext:ctx})});
-    const j=await r.json().catch(()=>({}));
-    if(j && j.ok && j.answer){
-      const ph=j.phase||matchAiPhase(ctx);
-      currentMatchAiRead={key, question:ph==='final'?'系统最终阵容解读':'系统24小时赛前解读', answer:j.answer, at:j.at||Date.now(), phase:ph, cached:!!j.cached};
-      if(opts.openWhenReady && typeof window.showDoubaoCached==='function') window.showDoubaoCached(currentMatchAiRead,key);
-      return currentMatchAiRead;
-    }
-    return null;
-  }catch(e){ return null; }
-  finally{
-    if(matchAiPendingKey===key) matchAiPendingKey='';
-    refreshMatchAiButton(currentMatchAiContext);
-  }
-}
-function requestMatchAiRead(){
-  const ctx=currentMatchAiContext;
-  if(!ctx){ alert('请先打开一场真实对阵，等页面生成模型预测后再解读。'); return; }
-  if(!USE_SERVER){ alert('系统赛前解读需要在线服务器模式，部署到 Render 后可用。'); return; }
-  const win=matchAiWindowState(ctx);
-  if(win==='early'){ alert('系统会在赛前24小时内生成这场比赛的AI解读。'); return; }
-  if(win==='closed'){ alert('本场已不在赛前解读生成窗口。'); return; }
-  const key=matchAiCacheKey(ctx);
-  if(currentMatchAiRead && currentMatchAiRead.key===key && currentMatchAiRead.answer){
-    if(typeof window.showDoubaoCached==='function') window.showDoubaoCached(currentMatchAiRead,key);
-    refreshMatchAiButton(ctx);
-    return;
-  }
-  ensureSystemMatchRead(ctx,{openWhenReady:true});
 }
 function lineupHTML(i){
   const sq=squads[i]||[], subs=squadSubs[i]||[], out=squadOut[i]||[];
@@ -1685,9 +1486,6 @@ function openMatchup(iH,iA,stage){
   const tag=document.querySelector('#v-matchup .comp .demo-tag');
   const isLiveMatch=(iH===6 && iA===7);   // 实时对阵使用 teams[6/7]
   if(!isLiveMatch){
-    currentMatchAiContext=null;
-    currentMatchAiRead=null;
-    refreshMatchAiButton(null);
     marketProbs=null;
     // —— 示例：全部数值归零，仅保留界面骨架 ——
     document.querySelector('#v-matchup .tdhead .sm').textContent='示例界面 · 不含真实数据';
@@ -1703,14 +1501,14 @@ function openMatchup(iH,iA,stage){
   }
   // —— 实时真实对阵（折中版：首发前给初步预测并清晰标注，首发后升级；首发齐自动锁定）——
   const ready = mhLineupReady;
-  const pr=predictMatch(iH,iA,stage);                  // 模型+阵容（未含市场概率）；先算出来供锁定快照与展示用
+  const pr=predictMatch(iH,iA,stage);                  // 模型+阵容（未含赔率）；先算出来供锁定快照与展示用
   // 首发齐 → 固化为 final（含首发）；已有 prelim 预备锁也在此就地升级为 final，避免卡在"初步"
   // 时间闸：仅"距开赛 <1h"才创建 final 锁（与 lockSweep 一致），避免 API 提前返回的"预测首发"过早触发锁定、把时间标盖早
   const mhLeft = mhKickoffMs>0 ? (mhKickoffMs-Date.now()) : -1;
   if(isLiveMatch && mhLineupReady && mhCurFixture && USE_SERVER && mhLeft>0 && mhLeft<=LOCK_WIN_MS && (!mhFrozen || mhFrozen.stage!=='final') && _lockState[mhCurFixture]!=='final'){
     mhFrozen={ o:(pr.a>=pr.d&&pr.a>=pr.b)?'H':(pr.b>=pr.d?'A':'D'),
       s:(pr.scores&&pr.scores[0]&&pr.scores[0][0])||'',
-      h:teams[iH].nm, a:teams[iA].nm, probs:{h:pr.a,d:pr.d,a:pr.b}, scores:pr.scores, profile:pr.profile, stage:'final', at:Date.now() };
+      h:teams[iH].nm, a:teams[iA].nm, probs:{h:pr.a,d:pr.d,a:pr.b}, scores:pr.scores, stage:'final', at:Date.now() };
     lockPrediction(mhCurFixture, mhFrozen);            // 异步落盘(可升级已有 prelim)
   }
   // 只有"拿到首发后据此重算"的 final 锁、且【当前确实读到首发】才算【已锁定】；
@@ -1729,20 +1527,19 @@ function openMatchup(iH,iA,stage){
       tag.style.background=''; tag.style.padding=''; tag.style.whiteSpace=''; tag.style.textAlign=''; tag.style.lineHeight='';
     }
   }
-  // —— 含首发的 final 锁 → 固化显示并标"已锁定"；其余(prelim/未锁) → 与首发前一致：融合市场概率、标"初步" ——
+  // —— 含首发的 final 锁 → 固化显示并标"已锁定"；其余(prelim/未锁) → 与首发前一致：融合赔率、标"初步" ——
   let oddsTag='';
   if(lockedView && mhFrozen.probs){
     pr.a=mhFrozen.probs.h; pr.d=mhFrozen.probs.d; pr.b=mhFrozen.probs.a;
     if(mhFrozen.scores && mhFrozen.scores.length) pr.scores=mhFrozen.scores;
-    if(mhFrozen.profile) pr.profile=mhFrozen.profile;
     oddsTag='<span style="display:inline-block;margin-left:6px;font-size:10px;color:var(--b);border:1px solid rgba(77,168,255,.4);border-radius:6px;padding:1px 6px;vertical-align:middle">已锁定赛前预测</span>';
   } else if(marketProbs && isFinite(marketProbs.h+marketProbs.d+marketProbs.a)){
-    const wM=0.35;                                     // 市场概率权重（适度，模型仍为主）
+    const wM=0.35;                                     // 赔率权重（适度，模型仍为主）
     let h=(1-wM)*pr.a + wM*marketProbs.h*100;
     let d=(1-wM)*pr.d + wM*marketProbs.d*100;
     let a=(1-wM)*pr.b + wM*marketProbs.a*100;
     const s=h+d+a; if(s>0){ pr.a=h/s*100; pr.d=d/s*100; pr.b=a/s*100; }
-    oddsTag='<span style="display:inline-block;margin-left:6px;font-size:10px;color:var(--a);border:1px solid rgba(198,255,68,.4);border-radius:6px;padding:1px 6px;vertical-align:middle">已结合市场概率</span>';
+    oddsTag='<span style="display:inline-block;margin-left:6px;font-size:10px;color:var(--a);border:1px solid rgba(198,255,68,.4);border-radius:6px;padding:1px 6px;vertical-align:middle">已结合市场赔率</span>';
   }
   document.querySelector('#v-matchup .tdhead .sm').textContent = lockedView
     ? '已锁定赛前预测 · 含首发'
@@ -1758,21 +1555,21 @@ function openMatchup(iH,iA,stage){
   // —— 比赛解读（职业评球口径：剧本 + 倾向 + 比分逻辑）——
   const favNm = (pr.a>=pr.b ? teams[iH].nm : teams[iA].nm);
   const favWinP = Math.round(Math.max(pr.a, pr.b));
-  const profile = pr.profile || matchProfile(pr.a, pr.d, pr.b, pr.lH, pr.lA, stage);
-  const mtype = profile.label || matchType(pr.a, pr.d, pr.b, pr.lH, pr.lA, stage);
+  const mtype = matchType(pr.a, pr.d, pr.b, pr.lH, pr.lA, stage);
   const anchorS=pr.scores[0]&&pr.scores[0][0], aggS=pr.scores[1]&&pr.scores[1][0], upS=pr.scores[2]&&pr.scores[2][0];
-  const tags=(profile.factors||[]).map(x=>`<span>${x}</span>`).join('');
-  const readHtml = `<div class="match-read"><span class="mr-title">比赛解读</span> 本场为【<b>${mtype}</b>】：${favWinP>=60?`<b>${favNm}</b> 胜率 ${favWinP}%、进攻端占优`:`双方接近，胜率 ${Math.round(pr.a)}% / 平 ${Math.round(pr.d)}% / ${Math.round(pr.b)}%`}。${profile.tone||''} 比分逻辑：<b>${anchorS}</b> 为稳健主线${aggS&&aggS!==anchorS?`，<b style="color:var(--a)">${aggS}</b> 代表进取分支`:''}${upS?`，<b>${upS}</b> 用于防冷`:''}。<div class="mread-tags">${tags}</div></div>`;
+  const readHtml = `<div style="background:rgba(77,168,255,.07);border:1px solid rgba(77,168,255,.25);border-radius:12px;padding:11px 13px;margin-bottom:10px;font-size:12.5px;line-height:1.75;color:var(--muted)"><b style="color:var(--b)">比赛解读</b> 本场为【<b style="color:var(--txt)">${mtype}</b>】：${favWinP>=60?`<b style="color:var(--txt)">${favNm}</b> 胜率 ${favWinP}%、进攻端占优`:`双方接近，胜率 ${Math.round(pr.a)}% / 平 ${Math.round(pr.d)}% / ${Math.round(pr.b)}%`}。比分逻辑：基础最可能 <b style="color:var(--txt)">${anchorS}</b>（稳健）${aggS&&aggS!==anchorS?`；结合实力差距，<b style="color:var(--a)">${aggS}</b> 提升为进取比分`:''}${upS?`；<b>${upS}</b> 作为防冷参考`:''}。</div>`;
   const note = ready
     ? '<div class="mh-ready">✓ 已读取双方首发名单，以下为已含首发的预测。'+oddsTag+'</div>'
-    : '<div class="mh-prelim"><b>初步预测 · 未含首发名单</b>'+oddsTag+'　以下数值基于双方近期实力与已知伤停，供赛前观赛参考；官方公布首发后（通常赛前约 1 小时）会自动升级为更准确的预测。这是正常的等待状态，并非功能缺失。</div>';
+    : '<div class="mh-prelim"><b>初步预测 · 未含首发名单</b>'+oddsTag+'　以下数值基于双方近期实力与已知伤停，<b>仅供参考</b>；官方公布首发后（通常赛前约 1 小时）会自动升级为更准确的预测。这是正常的等待状态，并非功能缺失。</div>';
   document.getElementById('mhImpact').innerHTML = note + readHtml + impactLine(iH) + impactLine(iA);
   const mx=Math.max(pr.scores[0][1],1), labs=['稳健','进取','防冷'];
   document.getElementById('mhScores').innerHTML=pr.scores.map((s,k)=>`<div class="sc"><div class="rank">${labs[k]}</div><div class="v">${s[0]}</div><div class="p">${s[1]}%</div><div class="pb"><i style="width:${s[1]/mx*100}%"></i></div></div>`).join('');
-  currentMatchAiContext=buildMatchAiContext(iH,iA,pr,stage,ready,lockedView,lockTs,profile);
-  if(!currentMatchAiRead || currentMatchAiRead.key!==matchAiCacheKey(currentMatchAiContext)) currentMatchAiRead=null;
-  refreshMatchAiButton(currentMatchAiContext);
-  ensureSystemMatchRead(currentMatchAiContext);
+  // —— 市场盘口（精算视角，B）+ AI 球评（豆包，A）——
+  renderMarket(marketProbs);
+  if(mhFrozen && mhFrozen.expert && mhFrozen.expert.length){ renderExpert(mhCurFixture); }                          // 已锁存 → 直接展示
+  else if(ready && mhCurFixture && USE_SERVER && mhLeft>0 && mhLeft<=LOCK_WIN_MS){                                  // 首发+替补齐且临近开赛 → 生成一次并锁存
+    ensureExpert(mhCurFixture, teams[iH].nm, teams[iA].nm, stage, pr);
+  } else { renderExpert(mhCurFixture); }                                                                            // 未到时机 → 占位提示
   if(ready){
     document.getElementById('mhLineA').innerHTML=lineupHTML(iH);
     document.getElementById('mhLineB').innerHTML=lineupHTML(iA);
@@ -1898,7 +1695,7 @@ function posWeight(pos){ return {FW:0.26,MF:0.20,DF:0.15,GK:0.18}[pos]||0.15; }
 async function teamBaseLive(id, name){   // 委托融合模型：世界杯数据+FIFA先验+加权近况
   return await coreStrength(id, name);
 }
-// 取实时市场概率（Match Winner 1X2），归一后转为 {h,d,a}；无数据/出错返回 null
+// 取实时赔率（Match Winner 1X2），去水后转为概率 {h,d,a}；无数据/出错返回 null
 async function fetchMarketProbs(fixtureId){
   try{
     const r=await api(`/odds?fixture=${fixtureId}`);
@@ -2011,14 +1808,18 @@ async function applyLineupPenalties(iH, iA, hId, aId, startH, startA){
     lineupPen[iA]=computeLineupPenalty(kpA, (startA||[]).map(p=>p.id));
   }catch(e){ lineupPen[iH]={ap:0,dp:0}; lineupPen[iA]={ap:0,dp:0}; }
 }
-// 独立预测（模型+阵容，不含市场概率，不依赖全局槽位）→ 供后台锁定用
+// 独立预测（模型+阵容，不含赔率，不依赖全局槽位）→ 供后台锁定用
 function predictSnapshot(bH,bA,lpH,lpA){
   const aH=bH.att*(1-Math.min(0.55,lpH.ap)), dH=bH.def*(1-Math.min(0.55,lpH.dp));
   const aA=bA.att*(1-Math.min(0.55,lpA.ap)), dA=bA.def*(1-Math.min(0.55,lpA.dp));
   const lH=Math.max(0.2,CONFIG.LEAGUE_AVG*Math.pow(aH/Math.max(0.3,dA),CONFIG.MATCH_SPREAD||1)*CONFIG.HOME_ADV);
   const lA=Math.max(0.2,CONFIG.LEAGUE_AVG*Math.pow(aA/Math.max(0.3,dH),CONFIG.MATCH_SPREAD||1)/CONFIG.HOME_ADV);
-  const sm=scoreModelFromLambdas(lH,lA,'group');
-  return {o:(sm.a>=sm.d&&sm.a>=sm.b)?'H':(sm.b>=sm.d?'A':'D'), s:sm.scores[0]?sm.scores[0][0]:'', h:'', a:'', probs:{h:sm.a,d:sm.d,a:sm.b}, scores:sm.scores, profile:sm.profile};
+  const g=CONFIG.MAX_GOALS; let pH=0,pD=0,pA=0,tot=0; const cells=[];
+  for(let i=0;i<=g;i++)for(let j=0;j<=g;j++){ const p=pois(i,lH)*pois(j,lA); tot+=p; if(i>j)pH+=p;else if(i===j)pD+=p;else pA+=p; cells.push([i+'-'+j,p]); }
+  const sT=pH+pD+pA||1, a=pH/sT*100,d=pD/sT*100,b=pA/sT*100;
+  cells.sort((x,y)=>y[1]-x[1]);
+  const sc=cells.slice(0,3).map(c=>[c[0], +((c[1]/(tot||1))*100).toFixed(1)]);
+  return {o:(a>=d&&a>=b)?'H':(b>=d?'A':'D'), s:sc[0]?sc[0][0]:'', h:'', a:'', probs:{h:a,d:d,a:b}, scores:sc};
 }
 // 后台锁定一场（不动 UI）。wantStage='final' 需首发齐(含阵容)；'prelim' 用纯模型
 async function lockMatch(fx, wantStage){
@@ -2081,7 +1882,7 @@ async function refreshMatchup(fixtureId, H, A, stage){
   const [bH,bA,iH,iA,ageH,ageA,outH,outA]=await Promise.all([
     teamBaseLive(H.id,H.name),teamBaseLive(A.id,A.name),injuredNames(H.id),injuredNames(A.id),
     ageMapFor(H.id),ageMapFor(A.id),injuryList(H.id),injuryList(A.id)]);
-  marketProbs = await fetchMarketProbs(fixtureId);   // 市场概率（有则用、无则 null）
+  marketProbs = await fetchMarketProbs(fixtureId);   // 赔率（有则用、无则 null）
   const [lH,lA]=await Promise.all([fetchLineupFull(fixtureId,H.id,iH,ageH),fetchLineupFull(fixtureId,A.id,iA,ageA)]);
   teams[6]={fl:'⚽',logo:H.logo,nm:H.name,elo:0,form:[],ch:0,mlog:[],base:bH,apiId:H.id};
   teams[7]={fl:'⚽',logo:A.logo,nm:A.name,elo:0,form:[],ch:0,mlog:[],base:bA,apiId:A.id};
@@ -2092,6 +1893,85 @@ async function refreshMatchup(fixtureId, H, A, stage){
   if(mhLineupReady){ await applyLineupPenalties(6,7,H.id,A.id,lH.start,lA.start); }  // 阵容影响数值
   else { lineupPen[6]={ap:0,dp:0}; lineupPen[7]={ap:0,dp:0}; }
   openMatchup(6,7,stage);
+}
+/* ===== AI 球评（豆包）+ 市场盘口：模型之外的第二意见 ===== */
+const _expertCache={};   // fixtureId → {state:'pending'|'done'|'fail', scores:[{s,why}]}
+const _aiBase = SERVER_BASE || (typeof location!=='undefined' && /^https?:$/.test(location.protocol) ? location.origin : '');
+async function aiCall(prompt){
+  try{
+    const r=await fetch(_aiBase+'/ai/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',content:prompt}]})});
+    const ct=r.headers.get('content-type')||'';
+    if(ct.indexOf('application/json')>=0 || !r.body || !r.body.getReader){          // 非流式(错误/不支持流) → 兜底解析
+      const txt=await r.text(); let j=null; try{j=JSON.parse(txt);}catch(_){}
+      if(j&&j.error) return null;
+      let acc=''; txt.split('\n').forEach(l=>{l=l.trim(); if(l.indexOf('data:')!==0)return; const dd=l.slice(5).trim(); if(dd==='[DONE]')return; try{const o=JSON.parse(dd); if(o.t)acc+=o.t;}catch(_){}});
+      return acc||null;
+    }
+    const reader=r.body.getReader(), dec=new TextDecoder(); let buf='',acc='';
+    while(true){ const {done,value}=await reader.read(); if(done)break; buf+=dec.decode(value,{stream:true}); let idx;
+      while((idx=buf.indexOf('\n\n'))>=0){ const blk=buf.slice(0,idx).trim(); buf=buf.slice(idx+2); if(blk.indexOf('data:')!==0)continue; const dd=blk.slice(5).trim(); if(dd==='[DONE]')continue; try{const o=JSON.parse(dd); if(o.t)acc+=o.t;}catch(_){} } }
+    return acc||null;
+  }catch(e){ return null; }
+}
+function parseExpert(text){                          // 从 AI 文本提取最多3个"比分+理由"
+  if(!text) return [];
+  let out=[];
+  const m=text.match(/\{[\s\S]*\}/);
+  if(m){ try{ const j=JSON.parse(m[0]); const arr=j.scores||j['比分']||[]; if(Array.isArray(arr)) out=arr.map(x=>({s:String(x.s||x.score||x['比分']||'').replace(/：/,':').trim(), why:String(x.why||x.reason||x['理由']||'').trim()})); }catch(_){} }
+  if(!out.length){
+    const re=/(\d{1,2})\s*[:：]\s*(\d{1,2})\s*[，,。、\-—]?\s*([^0-9:：\n;；，,]{0,24})/g; let mm;
+    while((mm=re.exec(text)) && out.length<3){ out.push({s:mm[1]+':'+mm[2], why:(mm[3]||'').trim()}); }
+  }
+  return out.filter(x=>/^\d{1,2}:\d{1,2}$/.test(x.s)).slice(0,3);
+}
+function buildExpertPrompt(H,A,stage,pr,startH,subH,startA,subA,market){
+  const sc=pr.scores.map((s,i)=>['稳健','进取','防冷'][i]+s[0]).join('、');
+  const mkt = (market && isFinite(market.h+market.d+market.a)) ? `；博彩盘口 主胜${Math.round(market.h*100)}%/平${Math.round(market.d*100)}%/客胜${Math.round(market.a*100)}%` : '';
+  const li = arr => (arr&&arr.length)? arr.slice(0,11).map(p=>(p&&(p.role||p.name))||'').filter(Boolean).join('、') : '未公布';
+  return `你是资深足球评论员+博彩精算师。请结合下面这场${stage==='ko'?'淘汰赛':'世界杯小组赛'}的真实出场阵容，用你的职业经验给出主观的三个最可能比分（主推/次选/冷门各一个），不要照搬统计模型。`
+   +`\n对阵：${H}(主) vs ${A}(客)。`
+   +`\n本站泊松模型：主胜${Math.round(pr.a)}%/平${Math.round(pr.d)}%/客胜${Math.round(pr.b)}%，模型比分 ${sc}${mkt}。`
+   +`\n${H} 首发：${li(startH)}；替补：${li(subH)}。`
+   +`\n${A} 首发：${li(startA)}；替补：${li(subA)}。`
+   +`\n请综合实力、首发与替补强弱、战术克制、赛事性质判断。只返回JSON，不要多余文字：`
+   +`{"scores":[{"s":"2:1","why":"12字内理由"},{"s":"x:y","why":"..."},{"s":"x:y","why":"..."}]}`;
+}
+async function ensureExpert(fixtureId, H, A, stage, pr){
+  const k=String(fixtureId);
+  if(_expertCache[k]) return;                        // 已生成/生成中/已失败 → 本会话不重复调用(省 AI 额度)
+  _expertCache[k]={state:'pending', scores:[]}; if(mhCurFixture===fixtureId) renderExpert(fixtureId);
+  const prompt=buildExpertPrompt(H,A,stage,pr,squads[6],squadSubs[6],squads[7],squadSubs[7],marketProbs);
+  const scores=parseExpert(await aiCall(prompt));
+  if(scores.length){
+    _expertCache[k]={state:'done', scores};
+    try{ fetch(_aiBase+'/predict/expert',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fixtureId, expert:scores})}); }catch(_){}  // best-effort 锁存
+  } else _expertCache[k]={state:'fail', scores:[]};
+  if(mhCurFixture===fixtureId) renderExpert(fixtureId);
+}
+function renderExpert(fixtureId){
+  const wrap=document.getElementById('mhExpert'), note=document.getElementById('mhExpertNote'); if(!wrap||!note) return;
+  const labs=['主推','次选','冷门'];
+  const locked = (mhFrozen && mhFrozen.expert && mhFrozen.expert.length) ? mhFrozen.expert : null;
+  const cc = _expertCache[String(fixtureId)];
+  const scores = locked || (cc && cc.scores) || [];
+  const state = locked ? 'done' : ((cc && cc.state) || 'idle');
+  if(scores.length){
+    wrap.innerHTML=scores.slice(0,3).map((s,k)=>`<div class="sc"><div class="rank" style="color:var(--b)">${labs[k]||''}</div><div class="v">${s.s}</div></div>`).join('');
+    note.innerHTML='<div style="font-size:11.5px;line-height:1.75;color:var(--faint);margin-top:7px">'+scores.slice(0,3).map((s,k)=>`<b style="color:var(--b)">${labs[k]}</b> ${s.s}${s.why?' · '+s.why:''}`).join('<br>')+'<br><span style="opacity:.7">— AI 球评(豆包) 主观分析，仅供参考</span></div>';
+  } else if(state==='pending'){
+    wrap.innerHTML=labs.map(l=>`<div class="sc"><div class="rank">${l}</div><div class="v" style="color:var(--faint)">…</div></div>`).join('');
+    note.innerHTML='<div style="font-size:11.5px;color:var(--faint);margin-top:7px">AI 球评分析生成中…（首次约数秒）</div>';
+  } else if(state==='fail'){
+    wrap.innerHTML=''; note.innerHTML='<div style="font-size:11.5px;color:var(--faint);margin-top:7px">AI 球评暂不可用（可能今日额度已用完），已展示模型与市场比分。</div>';
+  } else {
+    wrap.innerHTML=''; note.innerHTML='<div style="font-size:11.5px;color:var(--faint);margin-top:7px">官方首发+替补公布后，将由 AI 球评给出主观比分。</div>';
+  }
+}
+function renderMarket(market){
+  const el=document.getElementById('mhMarket'); if(!el) return;
+  el.innerHTML = (market && isFinite(market.h+market.d+market.a))
+    ? '<div style="margin-top:10px;font-size:11.5px;color:var(--faint);background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:8px 11px">📊 <b style="color:var(--muted)">市场盘口 · 精算视角</b>：主胜 '+Math.round(market.h*100)+'% · 平 '+Math.round(market.d*100)+'% · 客胜 '+Math.round(market.a*100)+'%</div>'
+    : '';
 }
 async function openMatchupLive(fixtureId){
   try{
@@ -2231,9 +2111,10 @@ async function predictFixtureModel(hId,hName,aId,aName){
   const [bH,bA]=await Promise.all([coreStrength(hId,hName),coreStrength(aId,aName)]);
   const lH=Math.max(0.2, CONFIG.LEAGUE_AVG*Math.pow(bH.att/Math.max(0.3,bA.def),CONFIG.MATCH_SPREAD||1)*CONFIG.HOME_ADV);
   const lA=Math.max(0.2, CONFIG.LEAGUE_AVG*Math.pow(bA.att/Math.max(0.3,bH.def),CONFIG.MATCH_SPREAD||1)/CONFIG.HOME_ADV);
-  const sm=scoreModelFromLambdas(lH,lA,'group');
-  const o = (sm.a>=sm.d&&sm.a>=sm.b)?'H':(sm.b>=sm.d?'A':'D');
-  return { o, s:(sm.scores[0]&&sm.scores[0][0])||'', probs:{h:sm.a,d:sm.d,a:sm.b}, scores:sm.scores, profile:sm.profile };
+  const g=CONFIG.MAX_GOALS; let pH=0,pD=0,pA=0,best=-1,bi=0,bj=0;
+  for(let i=0;i<=g;i++)for(let j=0;j<=g;j++){ const p=pois(i,lH)*pois(j,lA); if(i>j)pH+=p; else if(i===j)pD+=p; else pA+=p; if(p>best){best=p;bi=i;bj=j;} }
+  const o = (pH>=pD&&pH>=pA)?'H':(pA>=pD?'A':'D');
+  return { o, s: bi+'-'+bj };
 }
 // 生成器：只为"未开赛且未归档"的比赛预测并合并存档（诚实：已开赛比赛不事后补测）
 async function genPredictions(){
@@ -2244,7 +2125,7 @@ async function genPredictions(){
   for(const f of ns){
     try{
       const pr=await predictFixtureModel(f.teams.home.id,f.teams.home.name,f.teams.away.id,f.teams.away.name);
-      out[String(f.fixture.id)]={o:pr.o, s:pr.s, probs:pr.probs, scores:pr.scores, profile:pr.profile, at:Date.now(), h:f.teams.home.name, a:f.teams.away.name};
+      out[String(f.fixture.id)]={o:pr.o, s:pr.s, at:Date.now(), h:f.teams.home.name, a:f.teams.away.name};
     }catch(e){}
   }
   return out;
@@ -2266,9 +2147,8 @@ async function computeAccuracy(){
     if(ah==null||aa==null) return;
     const actO=ah>aa?'H':(ah<aa?'A':'D'), actS=ah+'-'+aa;
     const oOK=pred.o===actO;
-    const normScore=s=>String(s||'').replace(':','-');
     const predScores=(pred.scores&&pred.scores.length)?pred.scores.map(x=>x[0]):(pred.s?[pred.s]:[]);  // 三个预测比分(老记录回退单个)
-    const sOK=predScores.map(normScore).includes(actS);                      // 实际命中其一即算对，兼容 1:0 / 1-0
+    const sOK=predScores.includes(actS);                                    // 实际命中其一即算对
     settled++; if(oOK)oC++; if(sOK)sC++;
     rows.push({h:hN, a:aN, predO:pred.o, predScores, actO, actS, oOK, sOK, date:f.fixture.date, at:pred.at});
   });
@@ -2409,9 +2289,9 @@ function stPaint(){
   const allDone=groups.every(g=>g.every(t=>t.p>=3));   // 所有小组赛全部踢完
   let html=tabs;
   if(!anyPlayed){
-    html+=`<div class="st-note">本届世界杯<b style="color:var(--warn)">尚未开赛</b>，出线状态暂不显示；开赛后将根据每场真实赛况（积分 / 净胜球 / 进球）实时计算并更新。<br>「本站测算出线 X%」为本站预测模型对全部小组赛<b>蒙特卡洛推演 5000 次</b>得到的赛前预测，作为观赛数据参考，非官方结论。</div>`;
+    html+=`<div class="st-note">本届世界杯<b style="color:var(--warn)">尚未开赛</b>，出线状态暂不显示；开赛后将根据每场真实赛况（积分 / 净胜球 / 进球）实时计算并更新。<br>「本站测算出线 X%」为本站预测模型对全部小组赛<b>蒙特卡洛推演 5000 次</b>得到的赛前预测，仅供参考、非官方结论。</div>`;
   } else {
-    html+=`<div class="st-note">出线规则：每组<b style="color:var(--a)">前 2 名直接出线</b>，外加各组<b style="color:var(--warn)">第 3 名中最好的 8 队</b>（按 积分→净胜球→进球数）。小组未踢完前均标<b>暂列</b>，全部结束才确定；官方极端同分时还比球队行为分/FIFA排名，本表按主排序近似。<br>「本站测算出线 X%」为本站预测模型对剩余比赛<b>蒙特卡洛推演 5000 次</b>的估计（每轮结合已赛结果更新），作为观赛数据参考，非官方结论。</div>`;
+    html+=`<div class="st-note">出线规则：每组<b style="color:var(--a)">前 2 名直接出线</b>，外加各组<b style="color:var(--warn)">第 3 名中最好的 8 队</b>（按 积分→净胜球→进球数）。小组未踢完前均标<b>暂列</b>，全部结束才确定；官方极端同分时还比球队行为分/FIFA排名，本表按主排序近似。<br>「本站测算出线 X%」为本站预测模型对剩余比赛<b>蒙特卡洛推演 5000 次</b>的估计（每轮结合已赛结果更新），仅供参考、非官方结论。</div>`;
   }
   groups.forEach((g,gi)=>{
     const gStarted=g.some(t=>t.p>0), gDone=g.every(t=>t.p>=3);
@@ -2648,7 +2528,6 @@ function applySchedFixture(f){
   if(!el) return false;
   const dt=new Date(f.fixture.date), cat=schedCat(f,dt);
   const isLive=cat==='live', done=cat==='done';
-  el.dataset.kick=String(dt.getTime());
   const sH=f.goals.home, sA=f.goals.away, hasS=(sH!=null&&sA!=null);
   const rows=el.querySelectorAll('.match > .row');
   if(rows[0]){ const sc=rows[0].querySelector('.sc-mini'); if(sc) sc.textContent=hasS?sH:''; rows[0].classList.toggle('win', done&&hasS&&sH>sA); }
@@ -2665,31 +2544,6 @@ function applySchedFixture(f){
   return true;
 }
 function schedVisible(){ const v=document.getElementById('v-sched'); return v && v.classList.contains('on'); }
-function nearestScheduleCard(){
-  const cards=[...document.querySelectorAll('#v-sched .fix[data-kick]')];
-  if(!cards.length) return null;
-  const now=Date.now(), byKick=(a,b)=>Number(a.dataset.kick||0)-Number(b.dataset.kick||0);
-  const live=cards.filter(el=>el.dataset.cat==='live'||el.dataset.cat==='imminent').sort(byKick)[0];
-  if(live) return live;
-  const upcoming=cards.filter(el=>el.dataset.cat!=='done' && Number(el.dataset.kick||0)>=now).sort(byKick)[0];
-  if(upcoming) return upcoming;
-  return cards.filter(el=>el.dataset.cat!=='done').sort(byKick)[0] || cards[cards.length-1];
-}
-function centerScheduleCard(el, behavior){
-  const scroller=document.getElementById('body');
-  if(!el || !scroller) return;
-  const sr=scroller.getBoundingClientRect(), er=el.getBoundingClientRect();
-  const delta=(er.top+er.height/2)-(sr.top+sr.height/2);
-  scroller.scrollTo({top:Math.max(0,scroller.scrollTop+delta), behavior:behavior||'smooth'});
-}
-function focusScheduleAnchor(){
-  if(!schedVisible()) return;
-  requestAnimationFrame(()=>requestAnimationFrame(()=>{
-    const target=nearestScheduleCard();
-    document.querySelectorAll('#v-sched .fix.is-focus').forEach(el=>el.classList.remove('is-focus'));
-    if(target){ target.classList.add('is-focus'); centerScheduleCard(target,'smooth'); }
-  }));
-}
 async function schedLiveMerge(){
   if(!LIVE || !schedVisible()) return;
   try{ const live=await api(`/fixtures?live=all&league=${CONFIG.LEAGUE_ID}&season=${CONFIG.SEASON}`); (live||[]).forEach(f=>applySchedFixture(f)); }catch(e){}
@@ -2708,6 +2562,14 @@ function startSchedPollers(){
   _schedTimers=[ setInterval(schedLiveMerge, 8000), setInterval(schedFullReconcile, 30000) ];
 }
 
+// 进入赛程页 → 把"正在进行/下一场即将开赛"的比赛定位到屏幕中央，省去手动下滚
+function scrollToNextMatch(){
+  const v=document.getElementById('v-sched');
+  if(!v || !v.classList.contains('on')) return;
+  const live=v.querySelector('.fix[data-cat="live"]');
+  const target = live || v.querySelector('.fix:not([data-cat="done"])');
+  if(target) requestAnimationFrame(()=>{ try{ target.scrollIntoView({block:'center', behavior:'auto'}); }catch(e){ target.scrollIntoView(); } });
+}
 async function renderScheduleLive(){
   try{
     const fxs=await api(`/fixtures?league=${CONFIG.LEAGUE_ID}&season=${CONFIG.SEASON}`);   // 全部赛程
@@ -2724,7 +2586,7 @@ async function renderScheduleLive(){
         const cat=schedCat(f,dt), isLive=cat==='live', done=cat==='done';
         const sH=f.goals.home, sA=f.goals.away, hasS=(sH!=null&&sA!=null);
         const venue=(f.fixture.venue&&f.fixture.venue.name)?(f.fixture.venue.name+(f.fixture.venue.city?(' · '+f.fixture.venue.city):'')):'';
-        html+=`<div class="fix${isLive?' is-live':''}" data-fid="${f.fixture.id}" data-cat="${cat}" data-kick="${dt.getTime()}" onclick="openMatchupLive(${f.fixture.id})">
+        html+=`<div class="fix${isLive?' is-live':''}" data-fid="${f.fixture.id}" data-cat="${cat}" onclick="openMatchupLive(${f.fixture.id})">
           <div class="time">${hhmm}<small>${roundCN(f.league.round)}</small></div>
           <div class="match">
             <div class="row${done&&hasS&&sH>sA?' win':''}"><span class="fl">${mk(f.teams.home.logo)}</span>${f.teams.home.name}<span class="sc-mini">${hasS?sH:''}</span></div>
@@ -2738,12 +2600,11 @@ async function renderScheduleLive(){
     });
     document.getElementById('v-sched').innerHTML=html;
     wireCountdowns(document.getElementById('v-sched'));
-    focusScheduleAnchor();
   }catch(e){ console.warn('实时赛程获取失败，保留演示赛程：',e); }
 }
 if(typeof location!=='undefined' && location.hash==='#genpred'){ initGenPred(); }
 if(typeof location!=='undefined' && location.hash==='#strdebug'){ initStrDebug(); }
-if(LIVE){ renderScheduleLive(); }
+if(LIVE){ renderScheduleLive().then(()=>scrollToNextMatch()); }
 if(LIVE){ renderTeamsLive(); }
 if(LIVE){ renderPredAccBar(); }
 
@@ -2974,35 +2835,30 @@ if(LIVE && USE_SERVER){ setTimeout(lockSweep, 4000); setInterval(lockSweep, 3000
   // 字数：中文字=1，英文单词=1（含标点；空格不计）
   function countUnits(s){ const m=String(s||'').match(/[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff\u3000-\u303f\uff00-\uffef]|[A-Za-z0-9]+(?:['\u2019\-_][A-Za-z0-9]+)*|[^\s]/g); return m?m.length:0; }
   let history=[], busy=false;
-  const shownCachedKeys={};
   const open=()=>{ panel.classList.add('on'); mask.classList.add('on'); panel.setAttribute('aria-hidden','false'); setTimeout(()=>textEl.focus(),300); };
   const close=()=>{ panel.classList.remove('on'); mask.classList.remove('on'); panel.setAttribute('aria-hidden','true'); };
   fab.onclick=open; mask.onclick=close; closeBtn.onclick=close;
   function addMsg(text, cls){ const d=document.createElement('div'); d.className='ai-msg '+cls; d.textContent=text; bodyEl.appendChild(d); bodyEl.scrollTop=bodyEl.scrollHeight; return d; }
   function updCount(){ const n=countUnits(textEl.value); if(countEl){ countEl.textContent=n+'/'+MAX_UNITS; countEl.classList.toggle('over', n>MAX_UNITS); } return n; }
-  async function ask(q, opts){
-    opts=opts||{};
-    q=(q||'').trim(); if(!q||busy) return '';
-    if(countUnits(q)>MAX_UNITS){ addMsg('问题太长啦，请精简到 '+MAX_UNITS+' 字以内（中英文合计）。','err'); return ''; }
+  async function ask(q){
+    q=(q||'').trim(); if(!q||busy) return;
+    if(countUnits(q)>MAX_UNITS){ addMsg('问题太长啦，请精简到 '+MAX_UNITS+' 字以内（中英文合计）。','err'); return; }
     if(chips && chips.parentNode){ chips.parentNode.removeChild(chips); }   // 首问后移除快捷问题
     addMsg(q,'me'); history.push({role:'user',content:q});
     textEl.value=''; textEl.style.height='auto'; updCount(); busy=true; sendBtn.disabled=true;
     const tip=addMsg('豆包思考中…','bot typing');
-    let answer='';
     try{
-      const payload={messages:history.slice(-8)};
-      if(opts.matchContext) payload.matchContext=opts.matchContext;
-      const r=await fetch(aiBase+'/ai/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+      const r=await fetch(aiBase+'/ai/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:history.slice(-8)})});
       const ct=r.headers.get('content-type')||'';
       if(ct.indexOf('application/json')>=0 || !r.body || !r.body.getReader){
         // 非流式（出错信息，或浏览器不支持流式读取）
         const txt=await r.text(); tip.remove();
         let j=null; try{ j=JSON.parse(txt); }catch(_){}
-        if(j && j.error){ addMsg(j.error,'err'); return ''; }
+        if(j && j.error){ addMsg(j.error,'err'); return; }
         // 兜底：把 SSE 文本一次性解析出来
         let acc=''; txt.split('\n').forEach(l=>{ l=l.trim(); if(l.indexOf('data:')!==0) return; const d=l.slice(5).trim(); if(d==='[DONE]')return; try{const o=JSON.parse(d); if(o.t)acc+=o.t;}catch(_){}});
-        if(acc){ addMsg(acc,'bot'); history.push({role:'assistant',content:acc}); saveTurn(q,acc); answer=acc; } else { addMsg('没有返回内容，请重试','err'); }
-        return answer;
+        if(acc){ addMsg(acc,'bot'); history.push({role:'assistant',content:acc}); saveTurn(q,acc); } else { addMsg('没有返回内容，请重试','err'); }
+        return;
       }
       // 流式
       tip.remove();
@@ -3017,24 +2873,10 @@ if(LIVE && USE_SERVER){ setTimeout(lockSweep, 4000); setInterval(lockSweep, 3000
           try{ const o=JSON.parse(d); if(o.t){ acc+=o.t; bot.textContent=acc; bodyEl.scrollTop=bodyEl.scrollHeight; } }catch(_){}
         }
       }
-      if(acc){ history.push({role:'assistant',content:acc}); saveTurn(q,acc); answer=acc; } else { bot.remove(); addMsg('没有返回内容，请重试','err'); }
+      if(acc){ history.push({role:'assistant',content:acc}); saveTurn(q,acc); } else { bot.remove(); addMsg('没有返回内容，请重试','err'); }
     }catch(e){ try{tip.remove();}catch(_){} addMsg('网络异常，请稍后重试','err'); }
-    finally{ busy=false; sendBtn.disabled=false; textEl.focus(); }
-    return answer;
+    busy=false; sendBtn.disabled=false; textEl.focus();
   }
-  function showCachedMatchRead(item,key){
-    open();
-    if(!item||!item.answer) return;
-    if(shownCachedKeys[key]) return;
-    if(chips && chips.parentNode){ chips.parentNode.removeChild(chips); }
-    addMsg(item.question||'系统赛前解读','me');
-    addMsg(item.answer,'bot');
-    history.push({role:'user',content:item.question||'系统赛前解读'},{role:'assistant',content:item.answer});
-    shownCachedKeys[key]=true;
-  }
-  window.openDoubao=open;
-  window.showDoubaoCached=showCachedMatchRead;
-  window.askDoubao=function(q,opts){ open(); return ask(q,opts||{}); };
   sendBtn.onclick=()=>ask(textEl.value);
   textEl.addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); ask(textEl.value); } });
   textEl.addEventListener('input',()=>{ textEl.style.height='auto'; textEl.style.height=Math.min(textEl.scrollHeight,96)+'px'; updCount(); });

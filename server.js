@@ -97,6 +97,17 @@ function hashText(s) {
   for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
   return (h >>> 0).toString(36);
 }
+function normMatchName(s) {
+  return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]/g, '');
+}
+function sameMatchRead(record, ctx) {
+  if (!record || !ctx || !ctx.match) return true;
+  const rh = normMatchName(record.home), ra = normMatchName(record.away);
+  const ch = normMatchName(ctx.match.home), ca = normMatchName(ctx.match.away);
+  if (rh && ch && rh !== ch) return false;
+  if (ra && ca && ra !== ca) return false;
+  return true;
+}
 function publicMatchReadQuestion(phase) {
   const jsonTail = ' 最后另起一行，单独输出一行机器可读JSON（不要放进代码块、不要加任何其它文字），格式：{"scores":[{"s":"2:1","why":"12字内理由"},{"s":"1:1","why":"理由"},{"s":"0:0","why":"理由"}]}。这里的 scores 必须对应网页上下文里 model.scores 已给出的三个核心比分，只补充理由，不要额外扩展第4-6个比分。';
   return (phase === 'final'
@@ -162,10 +173,11 @@ async function getOrCreateMatchRead(body) {
   const fid = String(!body || body.fixtureId == null ? '' : body.fixtureId).replace(/[^0-9]/g, '');
   const phase = body && body.phase === 'final' ? 'final' : 'prelim';
   if (!fid) return { ok: false, error: '缺少比赛ID' };
+  const ctx = body && body.matchContext;
   let store = readMatchReads();
   const bucket = store[fid] || {};
-  if (bucket.final) return Object.assign({ ok: true, cached: true, phase: 'final' }, bucket.final);
-  if (bucket[phase]) return Object.assign({ ok: true, cached: true, phase }, bucket[phase]);
+  if (bucket.final && sameMatchRead(bucket.final, ctx)) return Object.assign({ ok: true, cached: true, phase: 'final' }, bucket.final);
+  if (bucket[phase] && sameMatchRead(bucket[phase], ctx)) return Object.assign({ ok: true, cached: true, phase }, bucket[phase]);
 
   let fx = null;
   try {
@@ -177,7 +189,6 @@ async function getOrCreateMatchRead(body) {
   const left = kickoffMs ? kickoffMs - Date.now() : 0;
   if (st !== 'NS' || !left || left <= 0) return { ok: false, pending: true, reason: 'not_pre_match', message: '本场已不在赛前解读生成窗口' };
   if (left > 24 * 60 * 60 * 1000) return { ok: false, pending: true, reason: 'too_early', message: '系统会在赛前24小时内生成AI解读' };
-  const ctx = body && body.matchContext;
   if (phase === 'final' && !(ctx && ctx.match && ctx.match.lineupReady)) {
     return { ok: false, pending: true, reason: 'waiting_lineup', message: '等待双方首发和替补名单齐全后生成最终阵容版解读' };
   }
@@ -190,7 +201,7 @@ async function getOrCreateMatchRead(body) {
   const p = (async () => {
     try {
       store = readMatchReads();
-      if (store[fid] && store[fid][phase]) return Object.assign({ ok: true, cached: true, phase }, store[fid][phase]);
+      if (store[fid] && store[fid][phase] && sameMatchRead(store[fid][phase], ctx)) return Object.assign({ ok: true, cached: true, phase }, store[fid][phase]);
       const gen = await callArkMatchRead(ctx, phase);
       if (!gen.ok) return gen;
       const record = {

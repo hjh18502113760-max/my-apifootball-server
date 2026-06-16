@@ -1786,7 +1786,9 @@ async function ensureSystemMatchRead(ctx, opts){
     const j=await r.json().catch(()=>({}));
     if(j && j.ok && j.answer){
       const ph=j.phase||matchAiPhase(ctx);
-      currentMatchAiRead={key, question:ph==='final'?'系统最终阵容解读':'系统24小时赛前解读', answer:j.answer, expertScores:Array.isArray(j.expertScores)?j.expertScores:[], at:j.at||Date.now(), phase:ph, cached:!!j.cached};
+      const matchLabel=[ctx.match.home, ctx.match.away].filter(Boolean).join(' vs ');
+      const readTitle=ph==='final'?'系统最终阵容解读':'系统24小时赛前解读';
+      currentMatchAiRead={key, question:(matchLabel?matchLabel+' · ':'')+readTitle, answer:j.answer, expertScores:Array.isArray(j.expertScores)?j.expertScores:[], at:j.at||Date.now(), phase:ph, cached:!!j.cached};
       if(currentMatchAiContext && matchAiCacheKey(currentMatchAiContext)===key) renderExpert();   // 球评比分回来了 → 刷新对阵页 AI 球评段
       if(opts.openWhenReady && typeof window.showDoubaoCached==='function') window.showDoubaoCached(currentMatchAiRead,key);
       return currentMatchAiRead;
@@ -3193,6 +3195,7 @@ if(LIVE && USE_SERVER){ setTimeout(lockSweep, 4000); setInterval(lockSweep, 3000
   function clearHistory(){
     saved=[]; try{ localStorage.removeItem(HKEY); }catch(_){}
     history=[];                                    // 同时清掉当前会话上下文
+    delete bodyEl.dataset.matchReadKey;
     bodyEl.innerHTML=initialBodyHTML; bindChips();
   }
   function saveTurn(q, a){ saved.push({role:'user',content:q},{role:'assistant',content:a}); persist(saved); }
@@ -3208,6 +3211,7 @@ if(LIVE && USE_SERVER){ setTimeout(lockSweep, 4000); setInterval(lockSweep, 3000
   async function ask(q, opts){
     opts=opts||{};
     q=(q||'').trim(); if(!q||busy) return '';
+    delete bodyEl.dataset.matchReadKey;
     if(countUnits(q)>MAX_UNITS){ addMsg('问题太长啦，请精简到 '+MAX_UNITS+' 字以内（中英文合计）。','err'); return ''; }
     if(chips && chips.parentNode){ chips.parentNode.removeChild(chips); }   // 首问后移除快捷问题
     addMsg(q,'me'); history.push({role:'user',content:q});
@@ -3250,11 +3254,12 @@ if(LIVE && USE_SERVER){ setTimeout(lockSweep, 4000); setInterval(lockSweep, 3000
   function showCachedMatchRead(item,key){
     open();
     if(!item||!item.answer) return;
-    if(shownCachedKeys[key]) return;
-    if(chips && chips.parentNode){ chips.parentNode.removeChild(chips); }
+    const readKey=key||item.key||'';
+    if(readKey && bodyEl.dataset.matchReadKey===readKey) return;
+    bodyEl.dataset.matchReadKey=readKey;
+    bodyEl.innerHTML='';
     addMsg(item.question||'系统赛前解读','me');
     addMsg(item.answer,'bot');
-    history.push({role:'user',content:item.question||'系统赛前解读'},{role:'assistant',content:item.answer});
     shownCachedKeys[key]=true;
   }
   window.openDoubao=open;

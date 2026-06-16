@@ -309,8 +309,9 @@ canvas{width:100%; height:128px; display:block}
 .ai-mask.on{opacity:1; pointer-events:auto}
 .ai-panel{position:absolute; left:0; right:0; bottom:0; z-index:46; height:82%; display:flex; flex-direction:column;
   background:var(--surface); border-top-left-radius:22px; border-top-right-radius:22px; border-top:1px solid var(--line);
-  transform:translateY(102%); transition:transform .3s cubic-bezier(.22,1,.36,1); box-shadow:0 -12px 40px rgba(0,0,0,.5)}
-.ai-panel.on{transform:translateY(0)}
+  transform:translateY(102%); visibility:hidden; pointer-events:none;
+  transition:transform .3s cubic-bezier(.22,1,.36,1), visibility 0s linear .3s; box-shadow:0 -12px 40px rgba(0,0,0,.5)}
+.ai-panel.on{transform:translateY(0); visibility:visible; pointer-events:auto; transition:transform .3s cubic-bezier(.22,1,.36,1), visibility 0s}
 .ai-head{display:flex; align-items:center; justify-content:space-between; padding:16px 18px 12px; border-bottom:1px solid var(--line)}
 .ai-ttl b{font-size:16px; color:var(--txt); display:block}
 .ai-ttl small{font-size:11px; color:var(--faint); letter-spacing:.06em}
@@ -1067,7 +1068,7 @@ const autoBase = (typeof location!=='undefined' && /^https?:$/.test(location.pro
 const SERVER_BASE = (CONFIG.SERVER_BASE && CONFIG.SERVER_BASE.length) ? CONFIG.SERVER_BASE : (CONFIG.API_KEY.length ? '' : autoBase);
 const USE_SERVER = CONFIG.USE_LIVE && SERVER_BASE.length > 0 && CONFIG.API_KEY.length === 0;   // 走共享代理(含自动同源)
 const LIVE = CONFIG.USE_LIVE && (USE_SERVER || CONFIG.API_KEY.length > 0);                      // 实时(代理或直连)
-const BUILD='2026-06-r31';
+const BUILD='2026-06-r32';
 try{ console.log('[胜率预测] BUILD='+BUILD+' | USE_LIVE='+CONFIG.USE_LIVE+' | origin='+(typeof location!=='undefined'?location.origin:'-')+' | SERVER_BASE='+SERVER_BASE+' | USE_SERVER='+USE_SERVER+' | LIVE='+LIVE); }catch(_){}
 let liveScoreList = null;           // 实时模型算出的比分榜，供 topScores 使用
 

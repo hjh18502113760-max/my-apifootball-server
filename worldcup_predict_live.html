@@ -644,7 +644,7 @@ canvas{width:100%; height:128px; display:block}
 
           <div class="section-t">比分推荐 · 稳健 / 进取 / 防冷</div>
           <div class="scores" id="mhScores"></div>
-          <div class="expert-actions"><button class="expert-btn" id="mhAiExplain" onclick="requestMatchAiRead()">AI 经验解读本场</button></div>
+          <div class="expert-actions"><button class="expert-btn" id="mhAiExplain" onclick="requestMatchAiRead()">系统赛前解读</button></div>
 
           <div class="section-t">预计出场阵容 · 点击看球员</div>
           <div class="lineups">
@@ -1075,7 +1075,7 @@ const autoBase = (typeof location!=='undefined' && /^https?:$/.test(location.pro
 const SERVER_BASE = (CONFIG.SERVER_BASE && CONFIG.SERVER_BASE.length) ? CONFIG.SERVER_BASE : (CONFIG.API_KEY.length ? '' : autoBase);
 const USE_SERVER = CONFIG.USE_LIVE && SERVER_BASE.length > 0 && CONFIG.API_KEY.length === 0;   // 走共享代理(含自动同源)
 const LIVE = CONFIG.USE_LIVE && (USE_SERVER || CONFIG.API_KEY.length > 0);                      // 实时(代理或直连)
-const BUILD='2026-06-r33-ai-once-cache';
+const BUILD='2026-06-r34-system-match-read';
 try{ console.log('[胜率预测] BUILD='+BUILD+' | USE_LIVE='+CONFIG.USE_LIVE+' | origin='+(typeof location!=='undefined'?location.origin:'-')+' | SERVER_BASE='+SERVER_BASE+' | USE_SERVER='+USE_SERVER+' | LIVE='+LIVE); }catch(_){}
 let liveScoreList = null;           // 实时模型算出的比分榜，供 topScores 使用
 
@@ -1491,50 +1491,22 @@ const POS_MAP={GK:['门将','p-gk'],DF:['后卫','p-df'],MF:['中场','p-mf'],FW
 const ST_COLOR={fit:'var(--a)',doubt:'var(--warn)',inj:'var(--live)',sus:'var(--muted)'};
 const ST_SHORT={doubt:'存疑',inj:'伤缺',sus:'停赛'};
 let currentMatchAiContext=null;
+let currentMatchAiRead=null;
 let matchAiPendingKey='';
-const MATCH_AI_CACHE_KEY='wc_match_ai_read_v1';
+const MATCH_READ_WINDOW_MS=24*60*60*1000;
 
-function hashText(s){
-  let h=2166136261;
-  s=String(s||'');
-  for(let i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,16777619); }
-  return (h>>>0).toString(36);
-}
-function readMatchAiCache(){
-  try{ const o=JSON.parse(localStorage.getItem(MATCH_AI_CACHE_KEY)||'{}'); return o&&typeof o==='object'?o:{}; }catch(_){ return {}; }
-}
-function writeMatchAiCache(cache){
-  try{ localStorage.setItem(MATCH_AI_CACHE_KEY, JSON.stringify(cache)); }catch(_){}
-}
-function loadMatchAiRead(key){
-  const cache=readMatchAiCache(), item=cache[key];
-  return item&&item.answer?item:null;
-}
-function saveMatchAiRead(key,item){
-  if(!key||!item||!item.answer) return;
-  const cache=readMatchAiCache();
-  cache[key]=item;
-  const keys=Object.keys(cache).sort((a,b)=>(cache[a].ts||0)-(cache[b].ts||0));
-  while(keys.length>40){ delete cache[keys.shift()]; }
-  writeMatchAiCache(cache);
-}
+function matchAiPhase(ctx){ return ctx&&ctx.match&&ctx.match.lineupReady ? 'final' : 'prelim'; }
 function matchAiCacheKey(ctx){
-  if(!ctx||!ctx.match||!ctx.model) return '';
-  const basis={
-    match:ctx.match,
-    probs:ctx.model.winDrawLose,
-    scores:(ctx.model.scores||[]).map(x=>({type:x.type,score:x.score,probability:x.probability})),
-    xg:ctx.model.expectedGoals,
-    profile:ctx.model.profile,
-    availability:(ctx.availability||[]).map(x=>({
-      team:x.team,
-      penalty:x.penalty,
-      starters:x.starters,
-      substitutes:x.substitutes,
-      absences:x.absences
-    }))
-  };
-  return 'match-ai-'+hashText(JSON.stringify(basis));
+  if(!ctx||!ctx.match||!ctx.match.fixtureId) return '';
+  return 'match-ai-'+ctx.match.fixtureId+'-'+matchAiPhase(ctx);
+}
+function matchAiWindowState(ctx){
+  const k=ctx&&ctx.match&&Number(ctx.match.kickoffMs||0);
+  if(!k) return 'ready';
+  const left=k-Date.now();
+  if(left<=0) return 'closed';
+  if(left>MATCH_READ_WINDOW_MS) return 'early';
+  return 'ready';
 }
 function refreshMatchAiButton(ctx){
   const btn=document.getElementById('mhAiExplain');
@@ -1544,16 +1516,21 @@ function refreshMatchAiButton(ctx){
   btn.disabled=false;
   btn.classList.remove('cached');
   if(key && matchAiPendingKey===key){
-    btn.textContent='AI 解读生成中...';
+    btn.textContent='系统解读准备中...';
     btn.disabled=true;
     return;
   }
-  const hit=key?loadMatchAiRead(key):null;
-  if(hit){
-    btn.textContent='查看 AI 经验解读';
+  if(currentMatchAiRead && currentMatchAiRead.key===key && currentMatchAiRead.answer){
+    btn.textContent=matchAiPhase(ctx)==='final'?'查看最终阵容解读':'查看系统赛前解读';
     btn.classList.add('cached');
+  }else if(matchAiWindowState(ctx)==='early'){
+    btn.textContent='赛前24小时内生成解读';
+    btn.disabled=true;
+  }else if(matchAiWindowState(ctx)==='closed'){
+    btn.textContent='赛前解读窗口已关闭';
+    btn.disabled=true;
   }else{
-    btn.textContent='AI 经验解读本场';
+    btn.textContent='同步系统赛前解读';
   }
 }
 
@@ -1587,7 +1564,18 @@ function buildMatchAiContext(iH,iA,pr,stage,ready,lockedView,lockTs,profile){
   return {
     source:'worldcup_matchup_panel',
     instruction:'请从主观经验、概率校准和职业评球角度解释，不要给资金决策或确定性承诺。',
-    match:{home:H.nm, away:A.nm, stage:stage==='ko'?'淘汰赛':'小组赛/常规赛程', lineupReady:!!ready, locked:!!lockedView, lockTime:lockTs||''},
+    match:{
+      fixtureId:mhCurFixture||0,
+      kickoffMs:mhKickoffMs||0,
+      kickoffLocal:mhKickoffMs?new Date(mhKickoffMs).toLocaleString('zh-CN',{hour12:false}):'',
+      home:H.nm,
+      away:A.nm,
+      stage:stage==='ko'?'淘汰赛':'小组赛/常规赛程',
+      phase:ready?'final':'prelim',
+      lineupReady:!!ready,
+      locked:!!lockedView,
+      lockTime:lockTs||''
+    },
     model:{
       winDrawLose:{home:Math.round(pr.a), draw:Math.round(pr.d), away:Math.round(pr.b)},
       scores:s0,
@@ -1600,44 +1588,50 @@ function buildMatchAiContext(iH,iA,pr,stage,ready,lockedView,lockTs,profile){
     ]
   };
 }
+async function ensureSystemMatchRead(ctx, opts){
+  opts=opts||{};
+  if(!ctx||!ctx.match||!ctx.match.fixtureId) return null;
+  if(!USE_SERVER){ return null; }
+  const key=matchAiCacheKey(ctx);
+  if(currentMatchAiRead && currentMatchAiRead.key===key && currentMatchAiRead.answer){
+    if(opts.openWhenReady && typeof window.showDoubaoCached==='function') window.showDoubaoCached(currentMatchAiRead,key);
+    return currentMatchAiRead;
+  }
+  const win=matchAiWindowState(ctx);
+  if(win!=='ready'){ refreshMatchAiButton(ctx); return null; }
+  if(matchAiPendingKey===key){ if(opts.openWhenReady && typeof window.openDoubao==='function') window.openDoubao(); return null; }
+  matchAiPendingKey=key; refreshMatchAiButton(ctx);
+  try{
+    const r=await fetch((SERVER_BASE||'')+'/ai/match-read',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({fixtureId:ctx.match.fixtureId, phase:matchAiPhase(ctx), matchContext:ctx})});
+    const j=await r.json().catch(()=>({}));
+    if(j && j.ok && j.answer){
+      const ph=j.phase||matchAiPhase(ctx);
+      currentMatchAiRead={key, question:ph==='final'?'系统最终阵容解读':'系统24小时赛前解读', answer:j.answer, at:j.at||Date.now(), phase:ph, cached:!!j.cached};
+      if(opts.openWhenReady && typeof window.showDoubaoCached==='function') window.showDoubaoCached(currentMatchAiRead,key);
+      return currentMatchAiRead;
+    }
+    return null;
+  }catch(e){ return null; }
+  finally{
+    if(matchAiPendingKey===key) matchAiPendingKey='';
+    refreshMatchAiButton(currentMatchAiContext);
+  }
+}
 function requestMatchAiRead(){
   const ctx=currentMatchAiContext;
   if(!ctx){ alert('请先打开一场真实对阵，等页面生成模型预测后再解读。'); return; }
-  if(typeof window.askDoubao!=='function'){ alert('AI 解读需要在线服务器模式，部署到 Render 后可用。'); return; }
-  const q='请基于当前对阵数据，加入主观经验判断，给出胜平负倾向、概率最大的三个比分、关键依据和风险点。';
+  if(!USE_SERVER){ alert('系统赛前解读需要在线服务器模式，部署到 Render 后可用。'); return; }
+  const win=matchAiWindowState(ctx);
+  if(win==='early'){ alert('系统会在赛前24小时内生成这场比赛的AI解读。'); return; }
+  if(win==='closed'){ alert('本场已不在赛前解读生成窗口。'); return; }
   const key=matchAiCacheKey(ctx);
-  const hit=loadMatchAiRead(key);
-  if(hit){
-    if(typeof window.showDoubaoCached==='function') window.showDoubaoCached(hit,key);
-    else window.askDoubao(q,{});
+  if(currentMatchAiRead && currentMatchAiRead.key===key && currentMatchAiRead.answer){
+    if(typeof window.showDoubaoCached==='function') window.showDoubaoCached(currentMatchAiRead,key);
     refreshMatchAiButton(ctx);
     return;
   }
-  if(matchAiPendingKey===key){
-    if(typeof window.openDoubao==='function') window.openDoubao();
-    return;
-  }
-  matchAiPendingKey=key;
-  refreshMatchAiButton(ctx);
-  const p=window.askDoubao(q,{matchContext:ctx});
-  if(p&&typeof p.then==='function'){
-    p.then(answer=>{
-      if(answer){
-        saveMatchAiRead(key,{
-          question:q,
-          answer:answer,
-          ts:Date.now(),
-          match:`${ctx.match.home} vs ${ctx.match.away}`
-        });
-      }
-    }).finally(()=>{
-      if(matchAiPendingKey===key) matchAiPendingKey='';
-      refreshMatchAiButton(currentMatchAiContext);
-    });
-  }else{
-    matchAiPendingKey='';
-    refreshMatchAiButton(currentMatchAiContext);
-  }
+  ensureSystemMatchRead(ctx,{openWhenReady:true});
 }
 function lineupHTML(i){
   const sq=squads[i]||[], subs=squadSubs[i]||[], out=squadOut[i]||[];
@@ -1692,6 +1686,7 @@ function openMatchup(iH,iA,stage){
   const isLiveMatch=(iH===6 && iA===7);   // 实时对阵使用 teams[6/7]
   if(!isLiveMatch){
     currentMatchAiContext=null;
+    currentMatchAiRead=null;
     refreshMatchAiButton(null);
     marketProbs=null;
     // —— 示例：全部数值归零，仅保留界面骨架 ——
@@ -1775,7 +1770,9 @@ function openMatchup(iH,iA,stage){
   const mx=Math.max(pr.scores[0][1],1), labs=['稳健','进取','防冷'];
   document.getElementById('mhScores').innerHTML=pr.scores.map((s,k)=>`<div class="sc"><div class="rank">${labs[k]}</div><div class="v">${s[0]}</div><div class="p">${s[1]}%</div><div class="pb"><i style="width:${s[1]/mx*100}%"></i></div></div>`).join('');
   currentMatchAiContext=buildMatchAiContext(iH,iA,pr,stage,ready,lockedView,lockTs,profile);
+  if(!currentMatchAiRead || currentMatchAiRead.key!==matchAiCacheKey(currentMatchAiContext)) currentMatchAiRead=null;
   refreshMatchAiButton(currentMatchAiContext);
+  ensureSystemMatchRead(currentMatchAiContext);
   if(ready){
     document.getElementById('mhLineA').innerHTML=lineupHTML(iH);
     document.getElementById('mhLineB').innerHTML=lineupHTML(iA);
@@ -3030,9 +3027,9 @@ if(LIVE && USE_SERVER){ setTimeout(lockSweep, 4000); setInterval(lockSweep, 3000
     if(!item||!item.answer) return;
     if(shownCachedKeys[key]) return;
     if(chips && chips.parentNode){ chips.parentNode.removeChild(chips); }
-    addMsg(item.question||'AI 经验解读本场','me');
+    addMsg(item.question||'系统赛前解读','me');
     addMsg(item.answer,'bot');
-    history.push({role:'user',content:item.question||'AI 经验解读本场'},{role:'assistant',content:item.answer});
+    history.push({role:'user',content:item.question||'系统赛前解读'},{role:'assistant',content:item.answer});
     shownCachedKeys[key]=true;
   }
   window.openDoubao=open;

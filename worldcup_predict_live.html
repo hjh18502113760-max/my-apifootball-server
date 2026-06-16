@@ -346,6 +346,8 @@ canvas{width:100%; height:128px; display:block}
 .expert-actions{margin:10px 0 2px}
 .expert-btn{width:100%; min-height:42px; border:1px solid rgba(198,255,68,.32); border-radius:12px; background:linear-gradient(90deg,rgba(198,255,68,.14),rgba(77,168,255,.10)); color:var(--txt); font-family:var(--ui); font-size:13px; font-weight:700; cursor:pointer}
 .expert-btn:active{transform:scale(.99)}
+.expert-btn.cached{border-color:rgba(77,168,255,.44); background:linear-gradient(90deg,rgba(77,168,255,.14),rgba(198,255,68,.08))}
+.expert-btn:disabled{opacity:.72; cursor:wait}
 /* ---- 积分榜 / 出线 / 射手榜 ---- */
 .st-tabs{display:flex; gap:8px; margin:2px 0 14px}
 .st-tabs button{flex:1; background:var(--surface); border:1px solid rgba(255,255,255,.08); color:var(--muted); font-family:var(--ui); font-size:13px; padding:9px 0; border-radius:10px; cursor:pointer}
@@ -1073,7 +1075,7 @@ const autoBase = (typeof location!=='undefined' && /^https?:$/.test(location.pro
 const SERVER_BASE = (CONFIG.SERVER_BASE && CONFIG.SERVER_BASE.length) ? CONFIG.SERVER_BASE : (CONFIG.API_KEY.length ? '' : autoBase);
 const USE_SERVER = CONFIG.USE_LIVE && SERVER_BASE.length > 0 && CONFIG.API_KEY.length === 0;   // 走共享代理(含自动同源)
 const LIVE = CONFIG.USE_LIVE && (USE_SERVER || CONFIG.API_KEY.length > 0);                      // 实时(代理或直连)
-const BUILD='2026-06-r32-ai-expert-context';
+const BUILD='2026-06-r33-ai-once-cache';
 try{ console.log('[胜率预测] BUILD='+BUILD+' | USE_LIVE='+CONFIG.USE_LIVE+' | origin='+(typeof location!=='undefined'?location.origin:'-')+' | SERVER_BASE='+SERVER_BASE+' | USE_SERVER='+USE_SERVER+' | LIVE='+LIVE); }catch(_){}
 let liveScoreList = null;           // 实时模型算出的比分榜，供 topScores 使用
 
@@ -1489,6 +1491,71 @@ const POS_MAP={GK:['门将','p-gk'],DF:['后卫','p-df'],MF:['中场','p-mf'],FW
 const ST_COLOR={fit:'var(--a)',doubt:'var(--warn)',inj:'var(--live)',sus:'var(--muted)'};
 const ST_SHORT={doubt:'存疑',inj:'伤缺',sus:'停赛'};
 let currentMatchAiContext=null;
+let matchAiPendingKey='';
+const MATCH_AI_CACHE_KEY='wc_match_ai_read_v1';
+
+function hashText(s){
+  let h=2166136261;
+  s=String(s||'');
+  for(let i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,16777619); }
+  return (h>>>0).toString(36);
+}
+function readMatchAiCache(){
+  try{ const o=JSON.parse(localStorage.getItem(MATCH_AI_CACHE_KEY)||'{}'); return o&&typeof o==='object'?o:{}; }catch(_){ return {}; }
+}
+function writeMatchAiCache(cache){
+  try{ localStorage.setItem(MATCH_AI_CACHE_KEY, JSON.stringify(cache)); }catch(_){}
+}
+function loadMatchAiRead(key){
+  const cache=readMatchAiCache(), item=cache[key];
+  return item&&item.answer?item:null;
+}
+function saveMatchAiRead(key,item){
+  if(!key||!item||!item.answer) return;
+  const cache=readMatchAiCache();
+  cache[key]=item;
+  const keys=Object.keys(cache).sort((a,b)=>(cache[a].ts||0)-(cache[b].ts||0));
+  while(keys.length>40){ delete cache[keys.shift()]; }
+  writeMatchAiCache(cache);
+}
+function matchAiCacheKey(ctx){
+  if(!ctx||!ctx.match||!ctx.model) return '';
+  const basis={
+    match:ctx.match,
+    probs:ctx.model.winDrawLose,
+    scores:(ctx.model.scores||[]).map(x=>({type:x.type,score:x.score,probability:x.probability})),
+    xg:ctx.model.expectedGoals,
+    profile:ctx.model.profile,
+    availability:(ctx.availability||[]).map(x=>({
+      team:x.team,
+      penalty:x.penalty,
+      starters:x.starters,
+      substitutes:x.substitutes,
+      absences:x.absences
+    }))
+  };
+  return 'match-ai-'+hashText(JSON.stringify(basis));
+}
+function refreshMatchAiButton(ctx){
+  const btn=document.getElementById('mhAiExplain');
+  if(!btn) return;
+  const key=ctx?matchAiCacheKey(ctx):'';
+  btn.dataset.aiKey=key;
+  btn.disabled=false;
+  btn.classList.remove('cached');
+  if(key && matchAiPendingKey===key){
+    btn.textContent='AI 解读生成中...';
+    btn.disabled=true;
+    return;
+  }
+  const hit=key?loadMatchAiRead(key):null;
+  if(hit){
+    btn.textContent='查看 AI 经验解读';
+    btn.classList.add('cached');
+  }else{
+    btn.textContent='AI 经验解读本场';
+  }
+}
 
 function setTri(pfx,a,d,b){
   const g=id=>document.getElementById(id);
@@ -1534,10 +1601,43 @@ function buildMatchAiContext(iH,iA,pr,stage,ready,lockedView,lockTs,profile){
   };
 }
 function requestMatchAiRead(){
-  if(!currentMatchAiContext){ alert('请先打开一场真实对阵，等页面生成模型预测后再解读。'); return; }
+  const ctx=currentMatchAiContext;
+  if(!ctx){ alert('请先打开一场真实对阵，等页面生成模型预测后再解读。'); return; }
   if(typeof window.askDoubao!=='function'){ alert('AI 解读需要在线服务器模式，部署到 Render 后可用。'); return; }
   const q='请基于当前对阵数据，加入主观经验判断，给出胜平负倾向、概率最大的三个比分、关键依据和风险点。';
-  window.askDoubao(q,{matchContext:currentMatchAiContext});
+  const key=matchAiCacheKey(ctx);
+  const hit=loadMatchAiRead(key);
+  if(hit){
+    if(typeof window.showDoubaoCached==='function') window.showDoubaoCached(hit,key);
+    else window.askDoubao(q,{});
+    refreshMatchAiButton(ctx);
+    return;
+  }
+  if(matchAiPendingKey===key){
+    if(typeof window.openDoubao==='function') window.openDoubao();
+    return;
+  }
+  matchAiPendingKey=key;
+  refreshMatchAiButton(ctx);
+  const p=window.askDoubao(q,{matchContext:ctx});
+  if(p&&typeof p.then==='function'){
+    p.then(answer=>{
+      if(answer){
+        saveMatchAiRead(key,{
+          question:q,
+          answer:answer,
+          ts:Date.now(),
+          match:`${ctx.match.home} vs ${ctx.match.away}`
+        });
+      }
+    }).finally(()=>{
+      if(matchAiPendingKey===key) matchAiPendingKey='';
+      refreshMatchAiButton(currentMatchAiContext);
+    });
+  }else{
+    matchAiPendingKey='';
+    refreshMatchAiButton(currentMatchAiContext);
+  }
 }
 function lineupHTML(i){
   const sq=squads[i]||[], subs=squadSubs[i]||[], out=squadOut[i]||[];
@@ -1592,6 +1692,7 @@ function openMatchup(iH,iA,stage){
   const isLiveMatch=(iH===6 && iA===7);   // 实时对阵使用 teams[6/7]
   if(!isLiveMatch){
     currentMatchAiContext=null;
+    refreshMatchAiButton(null);
     marketProbs=null;
     // —— 示例：全部数值归零，仅保留界面骨架 ——
     document.querySelector('#v-matchup .tdhead .sm').textContent='示例界面 · 不含真实数据';
@@ -1674,6 +1775,7 @@ function openMatchup(iH,iA,stage){
   const mx=Math.max(pr.scores[0][1],1), labs=['稳健','进取','防冷'];
   document.getElementById('mhScores').innerHTML=pr.scores.map((s,k)=>`<div class="sc"><div class="rank">${labs[k]}</div><div class="v">${s[0]}</div><div class="p">${s[1]}%</div><div class="pb"><i style="width:${s[1]/mx*100}%"></i></div></div>`).join('');
   currentMatchAiContext=buildMatchAiContext(iH,iA,pr,stage,ready,lockedView,lockTs,profile);
+  refreshMatchAiButton(currentMatchAiContext);
   if(ready){
     document.getElementById('mhLineA').innerHTML=lineupHTML(iH);
     document.getElementById('mhLineB').innerHTML=lineupHTML(iA);
@@ -2875,6 +2977,7 @@ if(LIVE && USE_SERVER){ setTimeout(lockSweep, 4000); setInterval(lockSweep, 3000
   // 字数：中文字=1，英文单词=1（含标点；空格不计）
   function countUnits(s){ const m=String(s||'').match(/[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff\u3000-\u303f\uff00-\uffef]|[A-Za-z0-9]+(?:['\u2019\-_][A-Za-z0-9]+)*|[^\s]/g); return m?m.length:0; }
   let history=[], busy=false;
+  const shownCachedKeys={};
   const open=()=>{ panel.classList.add('on'); mask.classList.add('on'); panel.setAttribute('aria-hidden','false'); setTimeout(()=>textEl.focus(),300); };
   const close=()=>{ panel.classList.remove('on'); mask.classList.remove('on'); panel.setAttribute('aria-hidden','true'); };
   fab.onclick=open; mask.onclick=close; closeBtn.onclick=close;
@@ -2882,12 +2985,13 @@ if(LIVE && USE_SERVER){ setTimeout(lockSweep, 4000); setInterval(lockSweep, 3000
   function updCount(){ const n=countUnits(textEl.value); if(countEl){ countEl.textContent=n+'/'+MAX_UNITS; countEl.classList.toggle('over', n>MAX_UNITS); } return n; }
   async function ask(q, opts){
     opts=opts||{};
-    q=(q||'').trim(); if(!q||busy) return;
-    if(countUnits(q)>MAX_UNITS){ addMsg('问题太长啦，请精简到 '+MAX_UNITS+' 字以内（中英文合计）。','err'); return; }
+    q=(q||'').trim(); if(!q||busy) return '';
+    if(countUnits(q)>MAX_UNITS){ addMsg('问题太长啦，请精简到 '+MAX_UNITS+' 字以内（中英文合计）。','err'); return ''; }
     if(chips && chips.parentNode){ chips.parentNode.removeChild(chips); }   // 首问后移除快捷问题
     addMsg(q,'me'); history.push({role:'user',content:q});
     textEl.value=''; textEl.style.height='auto'; updCount(); busy=true; sendBtn.disabled=true;
     const tip=addMsg('豆包思考中…','bot typing');
+    let answer='';
     try{
       const payload={messages:history.slice(-8)};
       if(opts.matchContext) payload.matchContext=opts.matchContext;
@@ -2897,11 +3001,11 @@ if(LIVE && USE_SERVER){ setTimeout(lockSweep, 4000); setInterval(lockSweep, 3000
         // 非流式（出错信息，或浏览器不支持流式读取）
         const txt=await r.text(); tip.remove();
         let j=null; try{ j=JSON.parse(txt); }catch(_){}
-        if(j && j.error){ addMsg(j.error,'err'); return; }
+        if(j && j.error){ addMsg(j.error,'err'); return ''; }
         // 兜底：把 SSE 文本一次性解析出来
         let acc=''; txt.split('\n').forEach(l=>{ l=l.trim(); if(l.indexOf('data:')!==0) return; const d=l.slice(5).trim(); if(d==='[DONE]')return; try{const o=JSON.parse(d); if(o.t)acc+=o.t;}catch(_){}});
-        if(acc){ addMsg(acc,'bot'); history.push({role:'assistant',content:acc}); saveTurn(q,acc); } else { addMsg('没有返回内容，请重试','err'); }
-        return;
+        if(acc){ addMsg(acc,'bot'); history.push({role:'assistant',content:acc}); saveTurn(q,acc); answer=acc; } else { addMsg('没有返回内容，请重试','err'); }
+        return answer;
       }
       // 流式
       tip.remove();
@@ -2916,10 +3020,23 @@ if(LIVE && USE_SERVER){ setTimeout(lockSweep, 4000); setInterval(lockSweep, 3000
           try{ const o=JSON.parse(d); if(o.t){ acc+=o.t; bot.textContent=acc; bodyEl.scrollTop=bodyEl.scrollHeight; } }catch(_){}
         }
       }
-      if(acc){ history.push({role:'assistant',content:acc}); saveTurn(q,acc); } else { bot.remove(); addMsg('没有返回内容，请重试','err'); }
+      if(acc){ history.push({role:'assistant',content:acc}); saveTurn(q,acc); answer=acc; } else { bot.remove(); addMsg('没有返回内容，请重试','err'); }
     }catch(e){ try{tip.remove();}catch(_){} addMsg('网络异常，请稍后重试','err'); }
-    busy=false; sendBtn.disabled=false; textEl.focus();
+    finally{ busy=false; sendBtn.disabled=false; textEl.focus(); }
+    return answer;
   }
+  function showCachedMatchRead(item,key){
+    open();
+    if(!item||!item.answer) return;
+    if(shownCachedKeys[key]) return;
+    if(chips && chips.parentNode){ chips.parentNode.removeChild(chips); }
+    addMsg(item.question||'AI 经验解读本场','me');
+    addMsg(item.answer,'bot');
+    history.push({role:'user',content:item.question||'AI 经验解读本场'},{role:'assistant',content:item.answer});
+    shownCachedKeys[key]=true;
+  }
+  window.openDoubao=open;
+  window.showDoubaoCached=showCachedMatchRead;
   window.askDoubao=function(q,opts){ open(); return ask(q,opts||{}); };
   sendBtn.onclick=()=>ask(textEl.value);
   textEl.addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); ask(textEl.value); } });

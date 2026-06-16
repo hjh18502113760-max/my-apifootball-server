@@ -645,7 +645,7 @@ canvas{width:100%; height:128px; display:block}
           <div class="section-t">模型比分 · 稳健 / 进取 / 防冷</div>
           <div class="scores" id="mhScores"></div>
 
-          <div class="section-t" id="mhExpertTitle">AI 球评 · 主推 / 次选 / 冷门</div>
+          <div class="section-t" id="mhExpertTitle">AI 球评 · 三比分核心理由</div>
           <div id="mhExpertWrap"><div class="scores" id="mhExpert"></div><div id="mhExpertNote"></div></div>
           <div id="mhMarket"></div>
           <div class="expert-actions"><button class="expert-btn" id="mhAiExplain" onclick="requestMatchAiRead()">系统赛前解读</button></div>
@@ -1079,7 +1079,7 @@ const autoBase = (typeof location!=='undefined' && /^https?:$/.test(location.pro
 const SERVER_BASE = (CONFIG.SERVER_BASE && CONFIG.SERVER_BASE.length) ? CONFIG.SERVER_BASE : (CONFIG.API_KEY.length ? '' : autoBase);
 const USE_SERVER = CONFIG.USE_LIVE && SERVER_BASE.length > 0 && CONFIG.API_KEY.length === 0;   // 走共享代理(含自动同源)
 const LIVE = CONFIG.USE_LIVE && (USE_SERVER || CONFIG.API_KEY.length > 0);                      // 实时(代理或直连)
-const BUILD='2026-06-r35-ai-expert-market';
+const BUILD='2026-06-r36-script-draw-sample-odds';
 try{ console.log('[胜率预测] BUILD='+BUILD+' | USE_LIVE='+CONFIG.USE_LIVE+' | origin='+(typeof location!=='undefined'?location.origin:'-')+' | SERVER_BASE='+SERVER_BASE+' | USE_SERVER='+USE_SERVER+' | LIVE='+LIVE); }catch(_){}
 let liveScoreList = null;           // 实时模型算出的比分榜，供 topScores 使用
 
@@ -1094,14 +1094,99 @@ function lambdas(strH,strA){
 }
 /* 比赛中：对"剩余时间还会进的球"建模，叠加当前比分，输出 胜平负 + 比分榜 */
 function mk(logo){ return logo ? `<img class="lg" src="${logo}" alt="" onerror="this.outerHTML='⚽'">` : '⚽'; }
+const wcDrawMeta={played:0, draws:0, rate:null};
+function clamp01(x){ return Math.max(0, Math.min(1, x)); }
+function clamp(x,a,b){ return Math.max(a, Math.min(b, x)); }
+function updateTournamentDrawMeta(fxs){
+  const done=(fxs||[]).filter(f=>f&&f.fixture&&['FT','AET','PEN'].includes(f.fixture.status&&f.fixture.status.short));
+  if(!done.length) return;
+  const draws=done.filter(f=>Number(f.goals&&f.goals.home)===Number(f.goals&&f.goals.away)).length;
+  wcDrawMeta.played=done.length; wcDrawMeta.draws=draws; wcDrawMeta.rate=draws/done.length;
+}
+function stageFromRound(round){
+  const r=String(round||'').toLowerCase();
+  if(/group|小组/.test(r)){
+    const m=r.match(/(?:round|matchday|轮)\s*(\d+)/);
+    return m ? ('group_r'+m[1]) : 'group';
+  }
+  if(/32|thirty/.test(r)) return 'r32';
+  if(/16|round of 16|sixteen|八分之一/.test(r)) return 'r16';
+  if(/quarter|8|四分之一/.test(r)) return 'qf';
+  if(/semi|半决/.test(r)) return 'sf';
+  if(/third|3rd|季军/.test(r)) return 'third';
+  if(/final|决赛/.test(r)) return 'final';
+  return 'ko';
+}
+function isKnockoutStage(stage){ return /^(ko|r32|r16|qf|sf|third|final)$/.test(String(stage||'')); }
+function stageProfile(stage){
+  const s=String(stage||'group');
+  if(s==='live') return {key:s,label:'实时赛况',ko:false,drawBase:0,drawCap:.45,caution:0};
+  const map={
+    group:{label:'小组赛',ko:false,drawBase:.045,drawCap:.42,caution:.5},
+    group_r1:{label:'小组赛首轮',ko:false,drawBase:.075,drawCap:.45,caution:.8},
+    group_r2:{label:'小组赛第二轮',ko:false,drawBase:.052,drawCap:.43,caution:.55},
+    group_r3:{label:'小组赛末轮',ko:false,drawBase:.035,drawCap:.41,caution:.35},
+    r32:{label:'32强淘汰赛',ko:true,drawBase:.070,drawCap:.47,caution:.75},
+    r16:{label:'16强淘汰赛',ko:true,drawBase:.080,drawCap:.48,caution:.82},
+    qf:{label:'8强淘汰赛',ko:true,drawBase:.095,drawCap:.50,caution:.90},
+    sf:{label:'半决赛',ko:true,drawBase:.110,drawCap:.52,caution:.96},
+    third:{label:'三四名决赛',ko:true,drawBase:.030,drawCap:.42,caution:.20},
+    final:{label:'决赛',ko:true,drawBase:.125,drawCap:.54,caution:1.0},
+    ko:{label:'淘汰赛',ko:true,drawBase:.085,drawCap:.49,caution:.85}
+  };
+  return Object.assign({key:s}, map[s]||map.group);
+}
+function drawCalibration(pH,pD,pA,lH,lA,stage,market){
+  const s=(pH+pD+pA)||1; let h=pH/s, d=pD/s, a=pA/s;
+  const sp=stageProfile(stage);
+  if(sp.key==='live') return {h,d,a,add:0,reasons:[]};
+  const gap=Math.abs(h-a)*100, total=(lH||0)+(lA||0);
+  let add=sp.drawBase, reasons=[sp.label+'平局基准'];
+  if(gap<=6){ add+=.075; reasons.push('实力接近'); }
+  else if(gap<=12){ add+=.050; reasons.push('胜负差小'); }
+  else if(gap<=20){ add+=.022; reasons.push('优势未拉开'); }
+  else if(gap>=38){ add-=.045; reasons.push('强弱差压低平局'); }
+  if(total<=2.05){ add+=.070; reasons.push('低总进球'); }
+  else if(total<=2.35){ add+=.042; reasons.push('进球期望偏低'); }
+  else if(total>=3.05){ add-=.040; reasons.push('开放度压低平局'); }
+  if(sp.ko && gap<=16) { add+=.035; reasons.push('淘汰赛谨慎'); }
+  if(wcDrawMeta.played>=8 && wcDrawMeta.rate!=null){
+    const dyn=clamp((wcDrawMeta.rate-0.28)*0.32,-.025,.075);
+    add+=dyn; if(Math.abs(dyn)>=.01) reasons.push('本届平局率校准');
+  }
+  if(market && market.h && market.d && market.a){
+    const fav=Math.max(market.h,market.a), modelFav=Math.max(h,a);
+    if(fav>=.62 && market.d>=.24 && gap<=24){ add+=.018; reasons.push('热门过热防平'); }
+    if(market.d>=d+.045){ add+=.020; reasons.push('市场平局抬升'); }
+    if(market.totals && market.totals.line && market.totals.line<=2.5 && market.totals.underProb>=.50){ add+=.018; reasons.push('小球市场'); }
+    if(fav-modelFav>=.10 && market.d>=.23){ add+=.012; reasons.push('市场与模型分歧'); }
+  }
+  add=clamp(add,-.055,.185);
+  const targetD=clamp(d+add,.12,sp.drawCap);
+  const inc=targetD-d;
+  if(inc>0){
+    const pool=h+a || 1;
+    h-=inc*(h/pool); a-=inc*(a/pool); d=targetD;
+  }else if(inc<0){
+    const give=-inc; d=targetD;
+    const favH=h>=a; h+=give*(favH?.58:.42); a+=give*(favH?.42:.58);
+  }
+  const t=h+d+a||1;
+  return {h:h/t,d:d/t,a:a/t,add,reasons};
+}
+function cellsFromLambdas(lH,lA){
+  const g=CONFIG.MAX_GOALS, cells=[];
+  for(let i=0;i<=g;i++)for(let j=0;j<=g;j++)cells.push({h:i,a:j,p:pois(i,lH)*pois(j,lA)});
+  return cells;
+}
 // —— 比分策略层：从概率矩阵挑「稳健/进取/防冷」三档（精算+评球口径，不扭曲概率）——
 function scoreKey(c, sep){ sep=sep||':'; return c.h+sep+c.a; }
 function scoreOutcome(c){ return c.h>c.a?'H':(c.h<c.a?'A':'D'); }
-function matchProfile(pH,pD,pA,lH,lA,stage){
+function matchProfile(pH,pD,pA,lH,lA,stage,market,drawMeta){
   const s=(pH+pD+pA)||1, hp=pH/s*100, dp=pD/s*100, ap=pA/s*100;
   const favH=hp>=ap, favWin=Math.max(hp,ap), gap=Math.abs(hp-ap);
   const favLambda=favH?lH:lA, dogLambda=favH?lA:lH, lambdaGap=Math.abs(lH-lA), total=lH+lA;
-  const ko=stage==='ko', live=stage==='live';
+  const sp=stageProfile(stage), ko=sp.ko, live=stage==='live';
   let label='略占上风', tone='优势方略高一档，但仍需防平局和效率波动。', minAggMargin=2, minAggGoals=2, open=false;
   if(favWin>=78 || (favWin>=72 && lambdaGap>=1.05)){
     label='实力悬殊';
@@ -1116,39 +1201,53 @@ function matchProfile(pH,pD,pA,lH,lA,stage){
     tone='双方进球期望偏高，比分推荐需要给到 3 球以上的开放场景。';
     minAggMargin=1; minAggGoals=2; open=true;
   }else if(dp>=29 && gap<=12){
-    label='均势谨慎';
-    tone='双方差距较小，平局和一球小胜仍是主线，进取比分只作次级分支。';
+    label=dp>=Math.max(hp,ap)?'平局粘性高':'均势谨慎';
+    tone=dp>=Math.max(hp,ap)?'平局已经成为主线分支，双方更像小比分拉锯。':'双方差距较小，平局和一球小胜仍是主线，进取比分只作次级分支。';
     minAggMargin=1; minAggGoals=2;
   }
   if(ko){
-    label='淘汰赛 · '+label;
+    label=sp.label+' · '+label;
     tone+=' 淘汰赛会天然压低冒险强度，领先后控节奏的可能性更高。';
   }else if(!live && favWin>=68 && total>=2.85){
     tone+=' 小组赛阶段若存在净胜球需求，大比分候选应比普通联赛更靠前。';
   }
+  if(!ko && /^group/.test(String(stage||'')) && dp>=30) tone+=' 小组赛平局校准已计入当前阶段的谨慎和拿分价值。';
+  const overheat = market && Math.max(market.h||0,market.a||0)>=.62 && gap<=24 ? 1 : 0;
+  const bttsYes = market && market.btts ? market.btts.yesProb : null;
+  const indices={
+    blowout:Math.round(clamp((favWin-56)*1.25 + lambdaGap*22 + Math.max(0,total-2.55)*18 + (favWin>=72?10:0) - (dp>=30?8:0),0,100)),
+    drawTrap:Math.round(clamp((dp-22)*2.2 + Math.max(0,2.55-total)*24 + Math.max(0,14-gap)*1.5 + (ko?10:0) + (overheat?8:0),0,100)),
+    overheat:Math.round(clamp((overheat?48:0) + (market&&market.totals&&market.totals.line<=2.5?16:0) + Math.max(0,dp-25),0,100)),
+    dogGoal:Math.round(clamp(dogLambda*38 + (bttsYes!=null?(bttsYes-.45)*60:0) - Math.max(0,lambdaGap-.75)*16,0,100)),
+    earlyChain:Math.round(clamp((favWin-58)*1.05 + Math.max(0,total-2.45)*23 + lambdaGap*13 - (ko?8:0),0,100))
+  };
   const factors=[];
-  factors.push('优势方胜率 '+Math.round(favWin)+'%');
+  factors.push(dp>=Math.max(hp,ap)?'平局主线 '+Math.round(dp)+'%':'优势方胜率 '+Math.round(favWin)+'%');
   factors.push('预期总进球 '+total.toFixed(2));
   factors.push('进球差 '+Math.abs(favLambda-dogLambda).toFixed(2));
+  if(drawMeta && Math.abs(drawMeta.add)>=.01) factors.push('平局校准 '+(drawMeta.add>0?'+':'')+Math.round(drawMeta.add*100)+'%');
   if(open) factors.push('开放度偏高');
   if(favWin>=72) factors.push('强弱差明显');
-  return {label,tone,factors,favH,favWin,gap,total,lambdaGap,minAggMargin,minAggGoals,open,ko};
+  factors.push('扩散'+indices.blowout+' / 闷平'+indices.drawTrap);
+  return {label,tone,factors,favH,favWin,gap,total,lambdaGap,minAggMargin,minAggGoals,open,ko,stageLabel:sp.label,indices,drawMeta};
 }
 function pickScore(sorted, used, pred){
   for(const c of sorted){ const k=scoreKey(c); if(!used.has(k) && pred(c)) return c; }
   return null;
 }
-function recommendScores(cells, pH, pD, pA, lH, lA, stage){
+function recommendScores(cells, pH, pD, pA, lH, lA, stage, market, drawMeta){
   const ssum=cells.reduce((t,c)=>t+c.p,0)||1;
   const sorted=[...cells].sort((x,y)=>y.p-x.p);
-  const profile=matchProfile(pH,pD,pA,lH,lA,stage);
+  const profile=matchProfile(pH,pD,pA,lH,lA,stage,market,drawMeta);
   const favH = profile.favH;                            // 占优方(按胜率)
   const favWins = c => favH ? c.h>c.a : c.a>c.h;
   const favMar  = c => favH ? c.h-c.a : c.a-c.h;
   const favGoals= c => favH ? c.h : c.a;
   const totalGoals=c => c.h+c.a;
   const used=new Set();
-  let anchor = profile.favWin>=57 ? pickScore(sorted, used, c=>favWins(c)) : null;
+  const drawMain = pD>=pH && pD>=pA;
+  let anchor = drawMain ? pickScore(sorted, used, c=>scoreOutcome(c)==='D') : null;
+  anchor = anchor || (profile.favWin>=57 ? pickScore(sorted, used, c=>favWins(c)) : null);
   anchor = anchor || sorted[0]; used.add(scoreKey(anchor));             // 稳健：主线剧本最可能比分
   const aMar = favWins(anchor)? favMar(anchor) : 0;
   let aggressive=null;
@@ -1178,17 +1277,18 @@ function recommendScores(cells, pH, pD, pA, lH, lA, stage){
 function matchType(pH,pD,pA,lH,lA,stage){
   return matchProfile(pH,pD,pA,lH,lA,stage).label;
 }
-function scoreModelFromLambdas(lH,lA,stage){
+function scoreModelFromLambdas(lH,lA,stage,market){
   const g=CONFIG.MAX_GOALS; let pH=0,pD=0,pA=0; const cells=[];
   for(let i=0;i<=g;i++)for(let j=0;j<=g;j++){
     const p=pois(i,lH)*pois(j,lA);
     if(i>j)pH+=p; else if(i===j)pD+=p; else pA+=p;
     cells.push({h:i,a:j,p});
   }
-  const sT=pH+pD+pA||1, rec=recommendScores(cells,pH,pD,pA,lH,lA,stage);
-  return {a:pH/sT*100,d:pD/sT*100,b:pA/sT*100,scores:rec.scores,profile:rec.profile,favH:rec.favH,lH,lA};
+  const cal=drawCalibration(pH,pD,pA,lH,lA,stage,market);
+  const rec=recommendScores(cells,cal.h,cal.d,cal.a,lH,lA,stage,market,cal);
+  return {a:cal.h*100,d:cal.d*100,b:cal.a*100,scores:rec.scores,profile:rec.profile,favH:rec.favH,lH,lA};
 }
-function predictLive(lA,lB,curA,curB,minute,stage){
+function predictLive(lA,lB,curA,curB,minute,stage,market){
   const rem=Math.max(0,(90-minute))/90;
   const M=matrix(lA*rem, lB*rem);
   let a=0,d=0,b=0;
@@ -1199,8 +1299,10 @@ function predictLive(lA,lB,curA,curB,minute,stage){
   const s=(a+d+b)||1;
   const cells=[];
   for(let i=0;i<M.length;i++)for(let j=0;j<M.length;j++)cells.push({h:curA+i, a:curB+j, p:M[i][j]});
-  const rec=recommendScores(cells, a, d, b, lA, lB, stage||'live');      // 稳健/进取/防冷（用胜负概率定占优方）
-  return {a:a/s*100, d:d/s*100, b:b/s*100, scores:rec.scores, favH:rec.favH, profile:rec.profile, lH:lA, lA:lB};
+  const baseStage=stage||'live';
+  const cal=drawCalibration(a,d,b,lA,lB,baseStage,market);
+  const rec=recommendScores(cells, cal.h, cal.d, cal.a, lA, lB, baseStage, market, cal);      // 稳健/进取/防冷（用胜负概率定占优方）
+  return {a:cal.h*100, d:cal.d*100, b:cal.a*100, scores:rec.scores, favH:rec.favH, profile:rec.profile, lH:lA, lA:lB};
 }
 
 /* —— 数据接口网关（缓存 + 每日额度管理 + 失败回退演示）—— */
@@ -1320,35 +1422,56 @@ const STR_K=0.0018, STR_P0=1565;   // FIFA积分→攻防倍率：陡度k与基�
 function priorStrength(name){ let p=fifaPts(name); if(p==null) p=1400; const f=Math.exp(STR_K*(p-STR_P0)); return {att:f, def:f}; }  // 查不到→保守默认1400(约0.80)
 function compWeight(name){
   name=String(name||'').toLowerCase();
-  if(name.includes('friendl')) return 0.5;
-  if(name.includes('qualif')) return 1.0;                 // 预选赛（含 World Cup Qualifiers）需先判
-  if(name.includes('nations league')) return 1.0;
-  if(name.includes('world cup')) return 1.3;              // 世界杯正赛
-  if(name.includes('euro')||name.includes('copa')||name.includes('afcon')||name.includes('africa cup')||name.includes('asian cup')||name.includes('gold cup')) return 1.2;
-  return 0.9;
+  if(name.includes('friendl')) return 0.28;
+  if(name.includes('world cup') && name.includes('qualif')) return 1.18;
+  if(name.includes('qualif')) return 1.05;                 // 预选赛（含 World Cup Qualifiers）需先判
+  if(name.includes('nations league')) return 0.82;
+  if(name.includes('world cup')) return 1.50;              // 世界杯正赛
+  if(name.includes('euro')||name.includes('copa')||name.includes('afcon')||name.includes('africa cup')||name.includes('asian cup')||name.includes('gold cup')) return 1.15;
+  return 0.72;
 }
 /* —— 实力估值·可调参数（数值越大效果越强）——
    FORM_OPP_EXP：打弱队的进球贬值力度（越大→刷弱旅球数越不值钱，治"弱联盟虚高"）
    PRIOR_W：混合里 FIFA先验 的占比（近况占 1-PRIOR_W；越大→越信先验、越不被近况带偏）
    FORM_CLAMP：近况攻防的上下限（防止极端近况压过先验） */
-const FORM_OPP_EXP=1.3, PRIOR_W=0.85, FORM_CLAMP=[0.72,1.45], WC_CLAMP=[0.65,1.6];
-// 对手加权 + 赛事加权 + 时间衰减的近况强度
-function formStrength(fx, id){
+const FORM_OPP_EXP=1.3, PRIOR_W=0.85, FORM_CLAMP=[0.72,1.45], WC_CLAMP=[0.65,1.6], FORM_SAMPLE_N=15, FORM_CANDIDATES=50;
+function sampleWeight(f,id){
+  const home=f.teams.home.id===id, oppName=home?f.teams.away.name:f.teams.home.name;
+  const comp=compWeight(f.league&&f.league.name), opp=oppFactor(oppName);
+  const days=Math.max(0,(Date.now()-new Date(f.fixture.date).getTime())/86400000);
+  const decay=Math.pow(0.5,days/540);
+  const round=String((f.league&&f.league.round)||'').toLowerCase();
+  let pressure=1;
+  if(/final|semi|quarter|playoff|knockout|round of|qualification|qualif|小组|group/.test(round)) pressure+=0.10;
+  if(comp<0.35 && opp<0.92) pressure*=0.60;                // 低强度友谊赛打弱队，显著降权
+  const complete=(f.goals&&f.goals.home!=null&&f.goals.away!=null)?1:0.55;
+  return {w:Math.max(0.02,comp*decay*Math.pow(opp,0.55)*pressure*complete), comp, opp, decay, pressure};
+}
+function selectQualitySamples(fx,id){
   const done=(fx||[]).filter(f=>['FT','AET','PEN'].includes(f.fixture.status.short));
+  const scored=done.map(f=>Object.assign({sample:sampleWeight(f,id)},f))
+    .sort((a,b)=>b.sample.w-a.sample.w || new Date(b.fixture.date)-new Date(a.fixture.date));
+  let selected=scored.filter(f=>f.sample.w>=0.22).slice(0,FORM_SAMPLE_N);
+  if(selected.length<6) selected=scored.slice(0,Math.min(FORM_SAMPLE_N,scored.length));
+  selected.sort((a,b)=>new Date(b.fixture.date)-new Date(a.fixture.date));
+  const avg=selected.length?selected.reduce((s,f)=>s+f.sample.w,0)/selected.length:0;
+  return {selected, count:selected.length, avgQuality:avg, enough:selected.length>=10 && avg>=0.38};
+}
+// 对手加权 + 赛事加权 + 时间衰减的高含金量近况强度
+function formStrength(fx, id){
+  const q=selectQualitySamples(fx,id), done=q.selected;
   if(done.length<3) return null;
-  const now=Date.now(); let sGF=0,sGA=0,sW=0;
+  let sGF=0,sGA=0,sW=0;
   done.forEach(f=>{
     const home=f.teams.home.id===id;
     const gf=(home?f.goals.home:f.goals.away)||0, ga=(home?f.goals.away:f.goals.home)||0;
     const opp=oppFactor(home?f.teams.away.name:f.teams.home.name);
     const adjGF=gf*Math.pow(opp,FORM_OPP_EXP), adjGA=ga/Math.pow(opp,FORM_OPP_EXP);   // 打强队进球更值钱、失球更可原谅
-    const comp=compWeight(f.league&&f.league.name);
-    const decay=Math.pow(0.5, Math.max(0,(now-new Date(f.fixture.date).getTime())/86400000)/365);  // 每年减半
-    const w=comp*decay; sGF+=adjGF*w; sGA+=adjGA*w; sW+=w;
+    const w=f.sample.w; sGF+=adjGF*w; sGA+=adjGA*w; sW+=w;
   });
   if(sW<=0) return null;
   const cl=x=>Math.max(FORM_CLAMP[0], Math.min(FORM_CLAMP[1], x));
-  return {att:cl((sGF/sW)/CONFIG.LEAGUE_AVG), def:cl(CONFIG.LEAGUE_AVG/Math.max(0.4, sGA/sW))};
+  return {att:cl((sGF/sW)/CONFIG.LEAGUE_AVG), def:cl(CONFIG.LEAGUE_AVG/Math.max(0.4, sGA/sW)), sampleCount:q.count, sampleQuality:+q.avgQuality.toFixed(2), enough:q.enough};
 }
 // 融合：本届世界杯数据(权重随场次上升) + FIFA先验 + 加权近况
 async function coreStrength(id, name, dbg){
@@ -1366,7 +1489,7 @@ async function coreStrength(id, name, dbg){
     }
   }catch(e){}
   let form=null;
-  try{ form=formStrength(await api(`/fixtures?team=${id}&last=18`), id); }catch(e){}
+  try{ form=formStrength(await api(`/fixtures?team=${id}&last=${FORM_CANDIDATES}`), id); }catch(e){}
   const parts=[];
   if(wc) parts.push({w:Math.min(0.7, wcPlayed*0.22), v:wc});           // 世界杯真实数据权重随场次上升(上限0.7)
   let rem=1-parts.reduce((a,p)=>a+p.w,0);
@@ -1380,7 +1503,7 @@ async function coreStrength(id, name, dbg){
     wcW:+(wc?Math.min(0.7,wcPlayed*0.22):0).toFixed(2),
     priorW:+((prior&&form)?rem*PRIOR_W:(prior&&!form?rem:0)).toFixed(2),
     formW:+((prior&&form)?rem*(1-PRIOR_W):(form&&!prior?rem:0)).toFixed(2) };
-  return { att, def };
+  return { att, def, formSample: form?{count:form.sampleCount, quality:form.sampleQuality, enough:form.enough}:null, wcPlayed };
 }
 async function teamStrength(id, name){
   const s=await coreStrength(id, name);
@@ -1415,7 +1538,7 @@ async function liveStats(fixtureId){
 
 /* ===================== 赛前对阵 · 重要度权重 · 伤停折减 ===================== */
 let matchupTeams=[1,3];                 // 当前对阵的两队下标
-let marketProbs=null;                     // 当前对阵的市场概率 {h,d,a}（归一后），无则 null
+let marketProbs=null;                     // 当前对阵的市场结构 {h,d,a,totals,handicap,btts,correct}，无则 null
 let mhLineupReady=false;                 // 该场是否已拿到真实首发名单（决定初步/正式预测）
 let playerOriginFn=()=>show('teams');   // 球员页返回去向
 
@@ -1459,6 +1582,14 @@ function availabilityPenalty(i){
   });
   return {ap:Math.min(0.45,ap), dp:Math.min(0.45,dp)};
 }
+function refreshPredictionShape(pr, stage, market){
+  if(!pr || !(pr.lH>=0) || !(pr.lA>=0)) return pr;
+  const cal=drawCalibration((pr.a||0)/100,(pr.d||0)/100,(pr.b||0)/100,pr.lH,pr.lA,stage,market);
+  pr.a=cal.h*100; pr.d=cal.d*100; pr.b=cal.a*100;
+  const rec=recommendScores(cellsFromLambdas(pr.lH,pr.lA),cal.h,cal.d,cal.a,pr.lH,pr.lA,stage,market,cal);
+  pr.scores=rec.scores; pr.profile=rec.profile; pr.favH=rec.favH;
+  return pr;
+}
 // 赛前预测：基础评级 × 伤停折减 → 期望进球 → Dixon-Coles
 function predictMatch(iH,iA,stage){
   const bH=teamBase(iH), bA=teamBase(iA);
@@ -1472,7 +1603,7 @@ function predictMatch(iH,iA,stage){
   const lH=Math.max(0.2, CONFIG.LEAGUE_AVG*Math.pow(attH/Math.max(0.3,defA),sp)*CONFIG.HOME_ADV);
   const lA=Math.max(0.2, CONFIG.LEAGUE_AVG*Math.pow(attA/Math.max(0.3,defH),sp)/CONFIG.HOME_ADV);
   const out=Object.assign(predictLive(lH,lA,0,0,0,stage), {penH,penA});
-  if(stage==='ko') out.ko=knockout(lH,lA);
+  if(isKnockoutStage(stage)) out.ko=knockout(lH,lA);
   return out;
 }
 // 淘汰赛：90分钟打平→加时(30分钟按比例累积进球)→仍平→点球(接近五五，强队略占优)
@@ -1565,20 +1696,37 @@ function absenceBrief(list, limit){
 }
 function renderMarket(market){
   const el=document.getElementById('mhMarket'); if(!el) return;
-  el.innerHTML = (market && isFinite(market.h+market.d+market.a))
-    ? '<div style="margin-top:10px;font-size:11.5px;color:var(--faint);background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:8px 11px">📊 <b style="color:var(--muted)">市场盘口 · 精算视角</b>：主胜 '+Math.round(market.h*100)+'% · 平 '+Math.round(market.d*100)+'% · 客胜 '+Math.round(market.a*100)+'% <span style="opacity:.7">（博彩赔率隐含，已并入上方胜平负，并喂给 AI 球评）</span></div>'
-    : '';
+  if(!(market && isFinite(market.h+market.d+market.a))){ el.innerHTML=''; return; }
+  const bits=['主胜 '+Math.round(market.h*100)+'%','平 '+Math.round(market.d*100)+'%','客胜 '+Math.round(market.a*100)+'%'];
+  if(market.totals) bits.push('大小球 '+market.totals.line+' · 大 '+Math.round(market.totals.overProb*100)+'%');
+  if(market.btts) bits.push('双方进球 '+Math.round(market.btts.yesProb*100)+'%');
+  if(market.handicap) bits.push('让球 '+(market.handicap.side==='home'?'主':'客')+' '+market.handicap.line);
+  el.innerHTML =
+    '<div style="margin-top:10px;font-size:11.5px;color:var(--faint);background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:8px 11px"><b style="color:var(--muted)">市场结构 · 精算视角</b>：'+bits.join(' · ')+' <span style="opacity:.7">（市场隐含概率，已并入上方胜平负，并提供给 AI 球评）</span></div>';
 }
 function renderExpert(){
   const wrap=document.getElementById('mhExpert'), note=document.getElementById('mhExpertNote'); if(!wrap||!note) return;
-  const labs=['主推','次选','冷门'];
-  const r=currentMatchAiRead, scores=(r&&Array.isArray(r.expertScores))?r.expertScores:[];
-  if(scores.length){
-    wrap.innerHTML=scores.slice(0,3).map((s,k)=>`<div class="sc"><div class="rank" style="color:var(--b)">${labs[k]||''}</div><div class="v">${s.s}</div></div>`).join('');
-    note.innerHTML='<div style="font-size:11.5px;line-height:1.75;color:var(--faint);margin-top:7px">'+scores.slice(0,3).map((s,k)=>`<b style="color:var(--b)">${labs[k]}</b> ${s.s}${s.why?' · '+s.why:''}`).join('<br>')+'<br><span style="opacity:.7">— AI 球评(豆包) 结合阵容与盘口的主观分析，仅供参考</span></div>';
-  } else {
-    wrap.innerHTML='';
-    note.innerHTML='<div style="font-size:11.5px;color:var(--faint);margin-top:7px">官方首发+替补公布、进入赛前解读窗口后，AI 球评会随系统解读一并给出主推 / 次选 / 冷门三个比分。</div>';
+  wrap.innerHTML='';
+  const modelScores=(currentMatchAiContext&&currentMatchAiContext.model&&currentMatchAiContext.model.scores)||[];
+  const profile=(currentMatchAiContext&&currentMatchAiContext.model&&currentMatchAiContext.model.profile)||{};
+  const r=currentMatchAiRead, aiReasons=(r&&Array.isArray(r.expertScores))?r.expertScores:[];
+  const fallbackWhy=(s,idx)=>{
+    const t=s.type||(['主推','次选','防冷'][idx]||'候选');
+    if(/防冷/.test(t)) return '覆盖平局、热门过热或弱势方偷分风险';
+    if(/进取|次选/.test(t)) return '对应早球打开、比分扩散或双方进球分支';
+    if(profile&&profile.indices&&profile.indices.drawTrap>=60) return '平局粘性和低总进球因素较强';
+    if(profile&&profile.indices&&profile.indices.blowout>=65) return '优势方扩散指数较高';
+    return '模型概率、阶段画像和市场结构共同支持';
+  };
+  if(modelScores.length){
+    const rows=modelScores.slice(0,3).map((s,idx)=>{
+      const hit=aiReasons.find(x=>x&&x.s===s.score);
+      const why=(hit&&hit.why)||fallbackWhy(s,idx);
+      return `<b style="color:var(--b)">${s.type}</b> ${s.score} · ${why}`;
+    });
+    note.innerHTML='<div style="font-size:11.5px;line-height:1.75;color:var(--faint);margin-top:7px">'+rows.join('<br>')+'<br><span style="opacity:.7">— 页面只展示上方三个核心比分；AI 用于解释理由，不额外扩展比分池。</span></div>';
+  }else{
+    note.innerHTML='<div style="font-size:11.5px;color:var(--faint);margin-top:7px">进入赛前解读窗口后，AI 球评会围绕上方三个核心比分补充理由。</div>';
   }
 }
 function buildMatchAiContext(iH,iA,pr,stage,ready,lockedView,lockTs,profile){
@@ -1592,7 +1740,7 @@ function buildMatchAiContext(iH,iA,pr,stage,ready,lockedView,lockTs,profile){
       kickoffLocal:mhKickoffMs?new Date(mhKickoffMs).toLocaleString('zh-CN',{hour12:false}):'',
       home:H.nm,
       away:A.nm,
-      stage:stage==='ko'?'淘汰赛':'小组赛/常规赛程',
+      stage:stageProfile(stage).label,
       phase:ready?'final':'prelim',
       lineupReady:!!ready,
       locked:!!lockedView,
@@ -1602,12 +1750,20 @@ function buildMatchAiContext(iH,iA,pr,stage,ready,lockedView,lockTs,profile){
       winDrawLose:{home:Math.round(pr.a), draw:Math.round(pr.d), away:Math.round(pr.b)},
       scores:s0,
       expectedGoals:{home:+(pr.lH||0).toFixed(2), away:+(pr.lA||0).toFixed(2), total:+(((pr.lH||0)+(pr.lA||0)).toFixed(2))},
-      profile:{label:(profile&&profile.label)||'', tone:(profile&&profile.tone)||'', factors:(profile&&profile.factors)||[]}
+      profile:{label:(profile&&profile.label)||'', tone:(profile&&profile.tone)||'', stageLabel:(profile&&profile.stageLabel)||'', factors:(profile&&profile.factors)||[], indices:(profile&&profile.indices)||{}, drawCalibration:(profile&&profile.drawMeta)?{add:Math.round((profile.drawMeta.add||0)*100), reasons:profile.drawMeta.reasons||[]}:null}
     },
-    market: (marketProbs && isFinite(marketProbs.h+marketProbs.d+marketProbs.a)) ? {home:Math.round(marketProbs.h*100), draw:Math.round(marketProbs.d*100), away:Math.round(marketProbs.a*100)} : null,
+    market: (marketProbs && isFinite(marketProbs.h+marketProbs.d+marketProbs.a)) ? {
+      home:Math.round(marketProbs.h*100),
+      draw:Math.round(marketProbs.d*100),
+      away:Math.round(marketProbs.a*100),
+      totals:marketProbs.totals||null,
+      handicap:marketProbs.handicap||null,
+      btts:marketProbs.btts||null,
+      correct:marketProbs.correct||[]
+    } : null,
     availability:[
-      {team:H.nm, penalty:availabilityPenalty(iH), starters:playerBrief(squads[iH],11), substitutes:playerBrief(squadSubs[iH],10), absences:absenceBrief(squadOut[iH],8)},
-      {team:A.nm, penalty:availabilityPenalty(iA), starters:playerBrief(squads[iA],11), substitutes:playerBrief(squadSubs[iA],10), absences:absenceBrief(squadOut[iA],8)}
+      {team:H.nm, sample:(H.base&&H.base.formSample)||null, penalty:availabilityPenalty(iH), starters:playerBrief(squads[iH],11), substitutes:playerBrief(squadSubs[iH],10), absences:absenceBrief(squadOut[iH],8)},
+      {team:A.nm, sample:(A.base&&A.base.formSample)||null, penalty:availabilityPenalty(iA), starters:playerBrief(squads[iA],11), substitutes:playerBrief(squadSubs[iA],10), absences:absenceBrief(squadOut[iA],8)}
     ]
   };
 }
@@ -1766,14 +1922,17 @@ function openMatchup(iH,iA,stage){
     let d=(1-wM)*pr.d + wM*marketProbs.d*100;
     let a=(1-wM)*pr.b + wM*marketProbs.a*100;
     const s=h+d+a; if(s>0){ pr.a=h/s*100; pr.d=d/s*100; pr.b=a/s*100; }
+    refreshPredictionShape(pr, stage, marketProbs);
     oddsTag='<span style="display:inline-block;margin-left:6px;font-size:10px;color:var(--a);border:1px solid rgba(198,255,68,.4);border-radius:6px;padding:1px 6px;vertical-align:middle">已结合市场概率</span>';
+  } else {
+    refreshPredictionShape(pr, stage, null);
   }
   document.querySelector('#v-matchup .tdhead .sm').textContent = lockedView
     ? '已锁定赛前预测 · 含首发'
-    : (ready ? (stage==='ko' ? '淘汰赛 · 已含首发' : '赛前预测 · 已含首发') : '初步预测 · 待首发公布');
+    : (ready ? (isKnockoutStage(stage) ? stageProfile(stage).label+' · 已含首发' : '赛前预测 · 已含首发') : '初步预测 · 待首发公布');
   setTri('mh', pr.a, pr.d, pr.b);
   const koT=document.getElementById('mhKoTitle'), koS=document.getElementById('mhKoSection');
-  if(stage==='ko' && pr.ko){
+  if(isKnockoutStage(stage) && pr.ko){
     koT.style.display=''; koS.style.display='';
     document.getElementById('mhKoH').style.flexBasis=pr.ko.h+'%'; document.getElementById('mhKoH').textContent=Math.round(pr.ko.h)+'%';
     document.getElementById('mhKoA').style.flexBasis=pr.ko.a+'%'; document.getElementById('mhKoA').textContent=Math.round(pr.ko.a)+'%';
@@ -1782,11 +1941,15 @@ function openMatchup(iH,iA,stage){
   // —— 比赛解读（职业评球口径：剧本 + 倾向 + 比分逻辑）——
   const favNm = (pr.a>=pr.b ? teams[iH].nm : teams[iA].nm);
   const favWinP = Math.round(Math.max(pr.a, pr.b));
+  const drawMain = pr.d>=pr.a && pr.d>=pr.b;
   const profile = pr.profile || matchProfile(pr.a, pr.d, pr.b, pr.lH, pr.lA, stage);
   const mtype = profile.label || matchType(pr.a, pr.d, pr.b, pr.lH, pr.lA, stage);
   const anchorS=pr.scores[0]&&pr.scores[0][0], aggS=pr.scores[1]&&pr.scores[1][0], upS=pr.scores[2]&&pr.scores[2][0];
   const tags=(profile.factors||[]).map(x=>`<span>${x}</span>`).join('');
-  const readHtml = `<div class="match-read"><span class="mr-title">比赛解读</span> 本场为【<b>${mtype}</b>】：${favWinP>=60?`<b>${favNm}</b> 胜率 ${favWinP}%、进攻端占优`:`双方接近，胜率 ${Math.round(pr.a)}% / 平 ${Math.round(pr.d)}% / ${Math.round(pr.b)}%`}。${profile.tone||''} 比分逻辑：<b>${anchorS}</b> 为稳健主线${aggS&&aggS!==anchorS?`，<b style="color:var(--a)">${aggS}</b> 代表进取分支`:''}${upS?`，<b>${upS}</b> 用于防冷`:''}。<div class="mread-tags">${tags}</div></div>`;
+  const readLead = drawMain
+    ? `平局 ${Math.round(pr.d)}% 为当前最高项，主胜 ${Math.round(pr.a)}% / 客胜 ${Math.round(pr.b)}%`
+    : (favWinP>=60?`<b>${favNm}</b> 胜率 ${favWinP}%、进攻端占优`:`双方接近，胜率 ${Math.round(pr.a)}% / 平 ${Math.round(pr.d)}% / ${Math.round(pr.b)}%`);
+  const readHtml = `<div class="match-read"><span class="mr-title">比赛解读</span> 本场为【<b>${mtype}</b>】：${readLead}。${profile.tone||''} 比分逻辑：<b>${anchorS}</b> 为稳健主线${aggS&&aggS!==anchorS?`，<b style="color:var(--a)">${aggS}</b> 代表进取分支`:''}${upS?`，<b>${upS}</b> 用于防冷`:''}。<div class="mread-tags">${tags}</div></div>`;
   const note = ready
     ? '<div class="mh-ready">✓ 已读取双方首发名单，以下为已含首发的预测。'+oddsTag+'</div>'
     : '<div class="mh-prelim"><b>初步预测 · 未含首发名单</b>'+oddsTag+'　以下数值基于双方近期实力与已知伤停，供赛前观赛参考；官方公布首发后（通常赛前约 1 小时）会自动升级为更准确的预测。这是正常的等待状态，并非功能缺失。</div>';
@@ -1797,7 +1960,7 @@ function openMatchup(iH,iA,stage){
   if(!currentMatchAiRead || currentMatchAiRead.key!==matchAiCacheKey(currentMatchAiContext)) currentMatchAiRead=null;
   refreshMatchAiButton(currentMatchAiContext);
   ensureSystemMatchRead(currentMatchAiContext);
-  renderMarket(marketProbs);      // 市场盘口佐证线（B）
+  renderMarket(marketProbs);      // 市场结构佐证线（B）
   renderExpert();                 // AI 球评 3 比分（A）：有缓存即显示，否则占位
   if(ready){
     document.getElementById('mhLineA').innerHTML=lineupHTML(iH);
@@ -1924,29 +2087,62 @@ function posWeight(pos){ return {FW:0.26,MF:0.20,DF:0.15,GK:0.18}[pos]||0.15; }
 async function teamBaseLive(id, name){   // 委托融合模型：世界杯数据+FIFA先验+加权近况
   return await coreStrength(id, name);
 }
-// 取实时市场概率（Match Winner 1X2），归一后转为 {h,d,a}；无数据/出错返回 null
+function oddsProb(odd){ const x=parseFloat(odd); return x>1?1/x:0; }
+function parseLine(v){ const m=String(v||'').match(/[-+]?\d+(?:\.\d+)?/); return m?parseFloat(m[0]):null; }
+function normPair(a,b){ const s=(a||0)+(b||0); return s>0?[a/s,b/s]:[0,0]; }
+function normThree(h,d,a){ const s=(h||0)+(d||0)+(a||0); return s>0?{h:h/s,d:d/s,a:a/s}:null; }
+// 取实时市场结构：胜平负为主，兼收大小球/让球/双方进球/正确比分；无数据返回 null
 async function fetchMarketProbs(fixtureId){
   try{
     const r=await api(`/odds?fixture=${fixtureId}`);
     if(!r || !r.length) return null;
-    // 结构：[{bookmakers:[{bets:[{name:'Match Winner', values:[{value:'Home',odd:'1.80'},...]}]}]}]
-    let best=null;
+    let best=null, totals=null, handicap=null, btts=null, correct=[];
     (r[0].bookmakers||[]).forEach(bk=>{
       (bk.bets||[]).forEach(bet=>{
-        if(/match winner|1x2|fulltime result/i.test(bet.name||'')){
+        const bn=String(bet.name||'');
+        if(/match winner|1x2|fulltime result/i.test(bn)){
           const m={};
           (bet.values||[]).forEach(v=>{
             const key=/home|^1$/i.test(v.value)?'h':/draw|^x$/i.test(v.value)?'d':/away|^2$/i.test(v.value)?'a':null;
             if(key) m[key]=parseFloat(v.odd);
           });
           if(m.h&&m.d&&m.a&&!best) best=m;
+        }else if(/over\/under|goals over\/under|total goals/i.test(bn)){
+          const byLine={};
+          (bet.values||[]).forEach(v=>{
+            const line=parseLine(v.value); if(line==null) return;
+            byLine[line]=byLine[line]||{};
+            if(/over/i.test(v.value)) byLine[line].over=oddsProb(v.odd);
+            if(/under/i.test(v.value)) byLine[line].under=oddsProb(v.odd);
+          });
+          Object.keys(byLine).map(Number).sort((a,b)=>Math.abs(a-2.5)-Math.abs(b-2.5)).some(line=>{
+            const o=byLine[line]; if(!o.over||!o.under) return false;
+            const p=normPair(o.over,o.under); totals={line, overProb:p[0], underProb:p[1]}; return true;
+          });
+        }else if(/asian handicap|handicap|spread/i.test(bn)){
+          (bet.values||[]).forEach(v=>{
+            const line=parseLine(v.value); if(line==null || handicap) return;
+            const p=oddsProb(v.odd);
+            const side=/home|^1/i.test(v.value)?'home':(/away|^2/i.test(v.value)?'away':'');
+            if(side) handicap={side,line,prob:p};
+          });
+        }else if(/both teams.*score|btts/i.test(bn)){
+          const m={};
+          (bet.values||[]).forEach(v=>{ if(/^yes|是/i.test(v.value)) m.y=oddsProb(v.odd); if(/^no|否/i.test(v.value)) m.n=oddsProb(v.odd); });
+          if(m.y&&m.n){ const p=normPair(m.y,m.n); btts={yesProb:p[0], noProb:p[1]}; }
+        }else if(/correct score|exact score/i.test(bn)){
+          (bet.values||[]).forEach(v=>{
+            const sc=String(v.value||'').match(/(\d+)\s*[-:]\s*(\d+)/);
+            if(sc) correct.push({score:sc[1]+':'+sc[2], prob:oddsProb(v.odd)});
+          });
         }
       });
     });
     if(!best) return null;
-    const ih=1/best.h, id_=1/best.d, ia=1/best.a, s=ih+id_+ia;   // 去水（隐含概率归一）
-    if(!(s>0)) return null;
-    return {h:ih/s, d:id_/s, a:ia/s};
+    const n=normThree(1/best.h,1/best.d,1/best.a);   // 去水（隐含概率归一）
+    if(!n) return null;
+    correct=correct.sort((a,b)=>b.prob-a.prob).slice(0,6);
+    return Object.assign(n,{totals,handicap,btts,correct});
   }catch(e){ return null; }
 }
 async function injuredNames(teamId){      // 伤停名单 → {球员名: 'inj'|'sus'}
@@ -2038,12 +2234,12 @@ async function applyLineupPenalties(iH, iA, hId, aId, startH, startA){
   }catch(e){ lineupPen[iH]={ap:0,dp:0}; lineupPen[iA]={ap:0,dp:0}; }
 }
 // 独立预测（模型+阵容，不含市场概率，不依赖全局槽位）→ 供后台锁定用
-function predictSnapshot(bH,bA,lpH,lpA){
+function predictSnapshot(bH,bA,lpH,lpA,matchStage){
   const aH=bH.att*(1-Math.min(0.55,lpH.ap)), dH=bH.def*(1-Math.min(0.55,lpH.dp));
   const aA=bA.att*(1-Math.min(0.55,lpA.ap)), dA=bA.def*(1-Math.min(0.55,lpA.dp));
   const lH=Math.max(0.2,CONFIG.LEAGUE_AVG*Math.pow(aH/Math.max(0.3,dA),CONFIG.MATCH_SPREAD||1)*CONFIG.HOME_ADV);
   const lA=Math.max(0.2,CONFIG.LEAGUE_AVG*Math.pow(aA/Math.max(0.3,dH),CONFIG.MATCH_SPREAD||1)/CONFIG.HOME_ADV);
-  const sm=scoreModelFromLambdas(lH,lA,'group');
+  const sm=scoreModelFromLambdas(lH,lA,matchStage||'group');
   return {o:(sm.a>=sm.d&&sm.a>=sm.b)?'H':(sm.b>=sm.d?'A':'D'), s:sm.scores[0]?sm.scores[0][0]:'', h:'', a:'', probs:{h:sm.a,d:sm.d,a:sm.b}, scores:sm.scores, profile:sm.profile};
 }
 // 后台锁定一场（不动 UI）。wantStage='final' 需首发齐(含阵容)；'prelim' 用纯模型
@@ -2065,7 +2261,7 @@ async function lockMatch(fx, wantStage){
     } else if(ex){ return; }                                                 // 首发/替补未齐但已有 prelim → 等下次升级
   }
   const [bH,bA]=await Promise.all([teamBaseLive(H.id,H.name),teamBaseLive(A.id,A.name)]);
-  const snap=predictSnapshot(bH,bA,lpH,lpA); snap.h=H.name; snap.a=A.name; snap.stage=stage;
+  const snap=predictSnapshot(bH,bA,lpH,lpA,stageFromRound(fx.league&&fx.league.round)); snap.h=H.name; snap.a=A.name; snap.stage=stage;
   await lockPrediction(id, snap);
 }
 // 扫描：预备锁(24h保覆盖) + 临近升级 final。每次只处理最紧迫一场，避免突发
@@ -2075,6 +2271,7 @@ async function lockSweep(){
   _sweeping=true;
   try{
     const fxs=await api(`/fixtures?league=${CONFIG.LEAGUE_ID}&season=${CONFIG.SEASON}`);
+    updateTournamentDrawMeta(fxs);
     const now=Date.now();
     const ns=(fxs||[]).filter(f=>f.fixture.status.short==='NS').sort((a,b)=>new Date(a.fixture.date)-new Date(b.fixture.date));
     let target=null, act=null;
@@ -2125,7 +2322,7 @@ async function openMatchupLive(fixtureId){
     const fxs=await api(`/fixtures?id=${fixtureId}`); const fx=fxs[0];
     mhKickoffMs=new Date(fx.fixture.date).getTime()||0;     // 记下开赛时刻，供 final 锁时间闸判断
     const H=fx.teams.home, A=fx.teams.away;
-    const stage=/group|小组/i.test((fx.league&&fx.league.round)||'')?'group':'ko';
+    const stage=stageFromRound(fx.league&&fx.league.round);
     const arch=await loadPredArchive();
     const locked = arch && arch[String(fixtureId)];
     if(locked) mhFrozen=locked;                       // 已锁定 → 进对阵页只显示固化值
@@ -2212,6 +2409,7 @@ function bestThirds(groups){
 let selfScorers=null, selfScorersBusy=false; const _evCache={};
 async function computeScorersFromEvents(){
   const fxs=await api(`/fixtures?league=${CONFIG.LEAGUE_ID}&season=${CONFIG.SEASON}`).catch(()=>null);
+  updateTournamentDrawMeta(fxs);
   const DONE=['FT','AET','PEN'];
   const finished=(fxs||[]).filter(f=>DONE.includes(f.fixture.status.short));
   const need=finished.filter(f=>!_evCache[f.fixture.id]);
@@ -2526,7 +2724,7 @@ async function renderUpcoming24(){
   if(!LIVE){ box.innerHTML=''; return; }
   let fxs=null;
   if(_up24.data && Date.now()-_up24.t<60000) fxs=_up24.data;
-  else { try{ fxs=await api(`/fixtures?league=${CONFIG.LEAGUE_ID}&season=${CONFIG.SEASON}`); _up24={t:Date.now(),data:fxs}; }catch(e){ return; } }
+  else { try{ fxs=await api(`/fixtures?league=${CONFIG.LEAGUE_ID}&season=${CONFIG.SEASON}`); _up24={t:Date.now(),data:fxs}; updateTournamentDrawMeta(fxs); }catch(e){ return; } }
   const now=Date.now();
   const soon=(fxs||[]).filter(f=>{ const left=new Date(f.fixture.date).getTime()-now; return f.fixture.status.short==='NS'&&left>0&&left<=86400000; })
     .sort((a,b)=>new Date(a.fixture.date)-new Date(b.fixture.date));
@@ -2737,6 +2935,7 @@ function startSchedPollers(){
 async function renderScheduleLive(){
   try{
     const fxs=await api(`/fixtures?league=${CONFIG.LEAGUE_ID}&season=${CONFIG.SEASON}`);   // 全部赛程
+    updateTournamentDrawMeta(fxs);
     if(!fxs||!fxs.length){ document.getElementById('v-sched').innerHTML='<div class="vhead"><div><h1>赛程</h1><div class="sub">暂未获取到赛程</div></div></div>'; return; }
     fxs.sort((a,b)=>new Date(a.fixture.date)-new Date(b.fixture.date));
     const days={}, order=[];

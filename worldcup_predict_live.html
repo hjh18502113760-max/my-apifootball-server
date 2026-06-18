@@ -343,6 +343,25 @@ canvas{width:100%; height:128px; display:block}
 .match-read .mr-title{color:var(--b); font-weight:700}
 .mread-tags{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px}
 .mread-tags span{border:1px solid rgba(255,255,255,.09); background:rgba(255,255,255,.04); color:var(--faint); border-radius:7px; padding:2px 6px; font-size:10.5px; line-height:1.35}
+.ai-report{width:100%; color:var(--txt)}
+.ai-report-head{padding:2px 2px 12px; border-bottom:1px solid var(--line)}
+.ai-report-head b{display:block; font-size:16px; line-height:1.4}
+.ai-report-head span{display:block; margin-top:4px; color:var(--faint); font-size:11px; line-height:1.55}
+.ai-prob-grid{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:7px; margin:12px 0}
+.ai-prob{min-width:0; background:rgba(255,255,255,.035); border:1px solid var(--line); border-radius:8px; padding:10px 6px; text-align:center}
+.ai-prob b{display:block; color:var(--a); font-family:var(--num); font-size:23px; line-height:1}
+.ai-prob span{display:block; color:var(--faint); font-size:9.5px; line-height:1.35; margin-top:6px}
+.ai-report-scores{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:7px; margin:10px 0 14px}
+.ai-rscore{min-width:0; border:1px solid rgba(77,168,255,.2); border-radius:8px; padding:9px 6px; text-align:center; background:rgba(77,168,255,.055)}
+.ai-rscore b{display:block; font-family:var(--num); font-size:24px; line-height:1.1}
+.ai-rscore em{display:block; color:var(--a); font-style:normal; font-size:12px; margin-top:3px}
+.ai-rscore span{display:block; color:var(--faint); font-size:9px; line-height:1.4; margin-top:5px}
+.ai-analysis{border-top:1px solid var(--line); padding-top:4px}
+.ai-analysis-item{padding:9px 1px; border-bottom:1px solid rgba(255,255,255,.05)}
+.ai-analysis-item b{display:block; color:var(--b); font-size:12px; margin-bottom:3px}
+.ai-analysis-item p{margin:0; color:var(--muted); font-size:12px; line-height:1.7}
+.ai-risk{margin-top:10px; padding:9px 10px; border-left:3px solid var(--warn); background:rgba(255,178,62,.06); color:var(--muted); font-size:11px; line-height:1.65}
+.ai-report-meta{margin-top:10px; color:var(--faint); font-size:10px; line-height:1.55}
 .expert-actions{margin:10px 0 2px}
 .expert-btn{width:100%; min-height:42px; border:1px solid rgba(198,255,68,.32); border-radius:12px; background:linear-gradient(90deg,rgba(198,255,68,.14),rgba(77,168,255,.10)); color:var(--txt); font-family:var(--ui); font-size:13px; font-weight:700; cursor:pointer}
 .expert-btn:active{transform:scale(.99)}
@@ -645,10 +664,10 @@ canvas{width:100%; height:128px; display:block}
           <div class="section-t">模型比分 · 稳健 / 进取 / 防冷</div>
           <div class="scores" id="mhScores"></div>
 
-          <div class="section-t" id="mhExpertTitle">AI 球评 · 三比分核心理由</div>
+          <div class="section-t" id="mhExpertTitle">豆包独立预测 · 大比分 / 三比分</div>
           <div id="mhExpertWrap"><div class="scores" id="mhExpert"></div><div id="mhExpertNote"></div></div>
           <div id="mhMarket"></div>
-          <div class="expert-actions"><button class="expert-btn" id="mhAiExplain" onclick="requestMatchAiRead()">系统赛前解读</button></div>
+          <div class="expert-actions"><button class="expert-btn" id="mhAiExplain" onclick="requestMatchAiRead()">AI赛前独立分析</button></div>
 
           <div class="section-t">预计出场阵容 · 点击看球员</div>
           <div class="lineups">
@@ -1079,7 +1098,7 @@ const autoBase = (typeof location!=='undefined' && /^https?:$/.test(location.pro
 const SERVER_BASE = (CONFIG.SERVER_BASE && CONFIG.SERVER_BASE.length) ? CONFIG.SERVER_BASE : (CONFIG.API_KEY.length ? '' : autoBase);
 const USE_SERVER = CONFIG.USE_LIVE && SERVER_BASE.length > 0 && CONFIG.API_KEY.length === 0;   // 走共享代理(含自动同源)
 const LIVE = CONFIG.USE_LIVE && (USE_SERVER || CONFIG.API_KEY.length > 0);                      // 实时(代理或直连)
-const BUILD='2026-06-r36-script-draw-sample-odds';
+const BUILD='2026-06-r37-ai-lineup-independent';
 try{ console.log('[胜率预测] BUILD='+BUILD+' | USE_LIVE='+CONFIG.USE_LIVE+' | origin='+(typeof location!=='undefined'?location.origin:'-')+' | SERVER_BASE='+SERVER_BASE+' | USE_SERVER='+USE_SERVER+' | LIVE='+LIVE); }catch(_){}
 let liveScoreList = null;           // 实时模型算出的比分榜，供 topScores 使用
 
@@ -1326,7 +1345,7 @@ function ttlFor(path){
   if(path.includes('/fixtures/events')) return 24*3600e3;    // 已结束比赛进球事件：1 天
   if(/teams\?league=/.test(path)) return 24*3600e3;          // 参赛球队列表：1 天
   if(path.includes('/injuries')) return 3600e3;              // 伤停：1 小时
-  if(path.includes('/fixtures/lineups')) return 5*60e3;      // 首发：5 分钟
+  if(path.includes('/fixtures/lineups')) return 60e3;        // 首发：1 分钟（只在内容变化时重算）
   if(/fixtures\?team=.*last=/.test(path)) return 10*60e3;    // 某队近 N 场：10 分钟（赛后尽快进详情/近况）
   if(/fixtures\?team=/.test(path)) return 30*60e3;           // 某队全部赛事：30 分钟
   if(path.includes('/fixtures/statistics')) return 20e3;     // 实时技术统计：20 秒
@@ -1633,7 +1652,8 @@ const MATCH_READ_WINDOW_MS=24*60*60*1000;
 function matchAiPhase(ctx){ return ctx&&ctx.match&&ctx.match.lineupReady ? 'final' : 'prelim'; }
 function matchAiCacheKey(ctx){
   if(!ctx||!ctx.match||!ctx.match.fixtureId) return '';
-  return 'match-ai-'+ctx.match.fixtureId+'-'+matchAiPhase(ctx);
+  const ph=matchAiPhase(ctx), version=ph==='final'?(ctx.match.lineupHash||'lineup'):'base';
+  return 'match-ai-'+ctx.match.fixtureId+'-'+ph+'-'+version;
 }
 function matchAiWindowState(ctx){
   const k=ctx&&ctx.match&&Number(ctx.match.kickoffMs||0);
@@ -1651,21 +1671,20 @@ function refreshMatchAiButton(ctx){
   btn.disabled=false;
   btn.classList.remove('cached');
   if(key && matchAiPendingKey===key){
-    btn.textContent='系统解读准备中...';
+    btn.textContent=matchAiPhase(ctx)==='final'?'AI最终阵容分析生成中...':'AI赛前初判生成中...';
     btn.disabled=true;
     return;
   }
   if(currentMatchAiRead && currentMatchAiRead.key===key && currentMatchAiRead.answer){
-    btn.textContent=matchAiPhase(ctx)==='final'?'查看最终阵容解读':'查看系统赛前解读';
+    btn.textContent=matchAiPhase(ctx)==='final'?'查看AI最终阵容分析':'查看AI赛前初判';
     btn.classList.add('cached');
   }else if(matchAiWindowState(ctx)==='early'){
-    btn.textContent='赛前24小时内生成解读';
+    btn.textContent='赛前24小时内生成AI初判';
     btn.disabled=true;
   }else if(matchAiWindowState(ctx)==='closed'){
-    btn.textContent='赛前解读窗口已关闭';
-    btn.disabled=true;
+    btn.textContent='读取已锁定AI赛前分析';
   }else{
-    btn.textContent='同步系统赛前解读';
+    btn.textContent=matchAiPhase(ctx)==='final'?'同步AI最终阵容分析':'同步AI赛前初判';
   }
 }
 
@@ -1683,16 +1702,46 @@ function impactLine(i){
   if(ap)eff.push('进攻 −'+ap+'%'); if(dp)eff.push('防守 −'+dp+'%');
   return `<div class="imp warn">${t.nm}：${who} → ${eff.join('，')||'影响有限'}</div>`;
 }
+function escHtml(v){ return String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function localHash(s){
+  let h=2166136261; s=String(s||'');
+  for(let i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,16777619); }
+  return (h>>>0).toString(36);
+}
 function playerBrief(list, limit){
   return (list||[]).slice(0,limit||11).map(p=>{
     const pos=(POS_MAP[p.pos]&&POS_MAP[p.pos][0])||p.pos||'球员';
-    const st=p.st&&p.st!=='fit'?(' '+(ST_SHORT[p.st]||p.st)):'';
-    const w=p.wt!=null?(' 重要度'+Math.round(playerWeight(p)*100)+'%'):'';
-    return `${p.role||p.name||'未知'}(${pos}${st}${w})`;
+    return {
+      id:p.id||0, name:p.role||p.name||'未知', position:pos, number:p.no||0,
+      age:p.age||null, height:p.height||'', status:p.st&&p.st!=='fit'?(ST_SHORT[p.st]||p.st):'健康',
+      importance:Math.round(playerWeight(p)*100),
+      tournament:{appearances:p.apps||0, starts:p.starts||0, rating:p.rating||0, goals:p.goals||0, assists:p.assists||0,
+        shotsOn:p.shotsOn||0, keyPasses:p.keyPasses||0, passAccuracy:p.passAccuracy||0,
+        yellow:p.yellow||0, red:p.red||0, tackles:p.tackles||0, interceptions:p.interceptions||0, saves:p.saves||0}
+    };
   });
 }
 function absenceBrief(list, limit){
-  return (list||[]).slice(0,limit||8).map(o=>`${o.name}${o.sus?'(停赛)':'(缺阵)'}${o.reason?' '+o.reason:''}`);
+  return (list||[]).slice(0,limit||8).map(o=>({name:o.name||'未知', status:o.sus?'停赛':'缺阵', reason:o.reason||''}));
+}
+function lineupHashForTeams(iH,iA){
+  const side=i=>({formation:(teams[i]&&teams[i].formation)||'', starters:(squads[i]||[]).map(p=>p.id||p.role), substitutes:(squadSubs[i]||[]).map(p=>p.id||p.role)});
+  return localHash(JSON.stringify([side(iH),side(iA)]));
+}
+function teamTacticalBrief(i){
+  const t=teams[i]||{}, b=t.base||{}, att=+(b.att||1).toFixed(2), def=+(b.def||1).toFixed(2);
+  const xi=squads[i]||[], bench=squadSubs[i]||[], fw=xi.filter(p=>p.pos==='FW'), mf=xi.filter(p=>p.pos==='MF'), backs=xi.filter(p=>p.pos==='DF'||p.pos==='GK');
+  const sum=(arr,key)=>arr.reduce((n,p)=>n+(Number(p[key])||0),0), avg=(arr,key)=>arr.length?+(sum(arr,key)/arr.length).toFixed(1):0;
+  const heights=backs.map(p=>parseFloat(String(p.height||'').replace(/[^0-9.]/g,''))).filter(n=>n>=150&&n<=220);
+  let tendency='攻守相对均衡';
+  if(att>=1.15&&def<.98) tendency='主动进攻，转换防守存在风险';
+  else if(att>=1.15&&def>=1.08) tendency='攻守能力均较强，具备持续压制条件';
+  else if(att<.98&&def>=1.08) tendency='防守与反击倾向';
+  else if(att<.95&&def<.95) tendency='攻防效率均偏弱';
+  return {formation:t.formation||'', coach:t.coach||'', tendency, attackRating:att, defenseRating:def, lineupPenalty:lineupPen[i]||{ap:0,dp:0},
+    lineupProfile:{averageAppearances:avg(xi,'apps'),averageStarts:avg(xi,'starts'),forwardGoals:sum(fw,'goals'),forwardShotsOn:sum(fw,'shotsOn'),
+      midfieldAssists:sum(mf,'assists'),midfieldKeyPasses:sum(mf,'keyPasses'),defenseAverageHeight:heights.length?+(heights.reduce((a,n)=>a+n,0)/heights.length).toFixed(1):null,
+      cardRiskPlayers:xi.filter(p=>(p.yellow||0)>0||(p.red||0)>0).length,benchAppearances:sum(bench,'apps'),benchGoals:sum(bench,'goals')}};
 }
 function renderMarket(market){
   const el=document.getElementById('mhMarket'); if(!el) return;
@@ -1706,34 +1755,26 @@ function renderMarket(market){
 }
 function renderExpert(){
   const wrap=document.getElementById('mhExpert'), note=document.getElementById('mhExpertNote'); if(!wrap||!note) return;
-  wrap.innerHTML='';
-  const modelScores=(currentMatchAiContext&&currentMatchAiContext.model&&currentMatchAiContext.model.scores)||[];
-  const profile=(currentMatchAiContext&&currentMatchAiContext.model&&currentMatchAiContext.model.profile)||{};
-  const r=currentMatchAiRead, aiReasons=(r&&Array.isArray(r.expertScores))?r.expertScores:[];
-  const fallbackWhy=(s,idx)=>{
-    const t=s.type||(['主推','次选','防冷'][idx]||'候选');
-    if(/防冷/.test(t)) return '覆盖平局、热门过热或弱势方偷分风险';
-    if(/进取|次选/.test(t)) return '对应早球打开、比分扩散或双方进球分支';
-    if(profile&&profile.indices&&profile.indices.drawTrap>=60) return '平局粘性和低总进球因素较强';
-    if(profile&&profile.indices&&profile.indices.blowout>=65) return '优势方扩散指数较高';
-    return '模型概率、阶段画像和市场结构共同支持';
-  };
-  if(modelScores.length){
-    const rows=modelScores.slice(0,3).map((s,idx)=>{
-      const hit=aiReasons.find(x=>x&&x.s===s.score);
-      const why=(hit&&hit.why)||fallbackWhy(s,idx);
-      return `<b style="color:var(--b)">${s.type}</b> ${s.score} · ${why}`;
-    });
-    note.innerHTML='<div style="font-size:11.5px;line-height:1.75;color:var(--faint);margin-top:7px">'+rows.join('<br>')+'<br><span style="opacity:.7">— 页面只展示上方三个核心比分；AI 用于解释理由，不额外扩展比分池。</span></div>';
+  const r=currentMatchAiRead, report=r&&r.report, scores=report&&Array.isArray(report.scores)?report.scores:[];
+  const labels=['AI首选','AI次选','AI第三'];
+  if(scores.length){
+    const mx=Math.max(1,...scores.map(x=>Number(x.probability)||0));
+    wrap.innerHTML=scores.slice(0,3).map((s,i)=>`<div class="sc"><div class="rank">${labels[i]}</div><div class="v">${escHtml(s.s)}</div><div class="p">${Number(s.probability||0).toFixed(1)}%</div><div class="pb"><i style="width:${Math.max(3,Number(s.probability||0)/mx*100)}%"></i></div></div>`).join('');
+    const p=report.probabilities||{};
+    note.innerHTML='<div style="font-size:11.5px;line-height:1.75;color:var(--muted);margin-top:8px">'+
+      '<b style="color:var(--a)">总进球≥4：'+Number(p.highScore||0).toFixed(1)+'%</b>　单边净胜≥3：'+Number(p.oneSided||0).toFixed(1)+'%　双方对攻大球：'+Number(p.shootout||0).toFixed(1)+'%<br>'+
+      '<span style="color:var(--faint)">'+escHtml(report.summary||report.scenarioLabel||'AI独立阵容判断')+' · 与本站统计模型相互独立，结论可能不同。</span></div>';
   }else{
-    note.innerHTML='<div style="font-size:11.5px;color:var(--faint);margin-top:7px">进入赛前解读窗口后，AI 球评会围绕上方三个核心比分补充理由。</div>';
+    wrap.innerHTML=labels.map(l=>`<div class="sc"><div class="rank">${l}</div><div class="v">—</div><div class="p">待生成</div><div class="pb"><i style="width:0%"></i></div></div>`).join('');
+    note.innerHTML='<div style="font-size:11.5px;line-height:1.7;color:var(--faint);margin-top:8px">赛前24小时内生成AI初判；双方官方首发和替补齐全后，自动升级为最终阵容独立预测。</div>';
   }
 }
 function buildMatchAiContext(iH,iA,pr,stage,ready,lockedView,lockTs,profile){
   const H=teams[iH], A=teams[iA], s0=(pr.scores||[]).map((s,idx)=>({type:['稳健','进取','防冷'][idx]||('候选'+(idx+1)), score:s[0], probability:s[1]}));
+  const lineupHash=ready?lineupHashForTeams(iH,iA):'';
   return {
     source:'worldcup_matchup_panel',
-    instruction:'请从主观经验、概率校准和职业评球角度解释，不要给资金决策或确定性承诺。',
+    instruction:'本站模型只作为基线。请独立分析单边碾压、双方对攻和低节奏分支，不得机械复制本站比分，不要给资金决策或确定性承诺。',
     match:{
       fixtureId:mhCurFixture||0,
       kickoffMs:mhKickoffMs||0,
@@ -1743,6 +1784,7 @@ function buildMatchAiContext(iH,iA,pr,stage,ready,lockedView,lockTs,profile){
       stage:stageProfile(stage).label,
       phase:ready?'final':'prelim',
       lineupReady:!!ready,
+      lineupHash,
       locked:!!lockedView,
       lockTime:lockTs||''
     },
@@ -1762,8 +1804,8 @@ function buildMatchAiContext(iH,iA,pr,stage,ready,lockedView,lockTs,profile){
       correct:marketProbs.correct||[]
     } : null,
     availability:[
-      {team:H.nm, sample:(H.base&&H.base.formSample)||null, penalty:availabilityPenalty(iH), starters:playerBrief(squads[iH],11), substitutes:playerBrief(squadSubs[iH],10), absences:absenceBrief(squadOut[iH],8)},
-      {team:A.nm, sample:(A.base&&A.base.formSample)||null, penalty:availabilityPenalty(iA), starters:playerBrief(squads[iA],11), substitutes:playerBrief(squadSubs[iA],10), absences:absenceBrief(squadOut[iA],8)}
+      {team:H.nm, tactical:teamTacticalBrief(iH), sample:(H.base&&H.base.formSample)||null, penalty:availabilityPenalty(iH), starters:playerBrief(squads[iH],11), substitutes:playerBrief(squadSubs[iH],16), absences:absenceBrief(squadOut[iH],8)},
+      {team:A.nm, tactical:teamTacticalBrief(iA), sample:(A.base&&A.base.formSample)||null, penalty:availabilityPenalty(iA), starters:playerBrief(squads[iA],11), substitutes:playerBrief(squadSubs[iA],16), absences:absenceBrief(squadOut[iA],8)}
     ]
   };
 }
@@ -1777,7 +1819,7 @@ async function ensureSystemMatchRead(ctx, opts){
     return currentMatchAiRead;
   }
   const win=matchAiWindowState(ctx);
-  if(win!=='ready'){ refreshMatchAiButton(ctx); return null; }
+  if(win==='early'){ refreshMatchAiButton(ctx); return null; }
   if(matchAiPendingKey===key){ if(opts.openWhenReady && typeof window.openDoubao==='function') window.openDoubao(); return null; }
   matchAiPendingKey=key; refreshMatchAiButton(ctx);
   try{
@@ -1787,12 +1829,13 @@ async function ensureSystemMatchRead(ctx, opts){
     if(j && j.ok && j.answer){
       const ph=j.phase||matchAiPhase(ctx);
       const matchLabel=[ctx.match.home, ctx.match.away].filter(Boolean).join(' vs ');
-      const readTitle=ph==='final'?'系统最终阵容解读':'系统24小时赛前解读';
-      currentMatchAiRead={key, question:(matchLabel?matchLabel+' · ':'')+readTitle, answer:j.answer, expertScores:Array.isArray(j.expertScores)?j.expertScores:[], at:j.at||Date.now(), phase:ph, cached:!!j.cached};
+      const readTitle=ph==='final'?'AI最终阵容独立预测':'AI24小时赛前初判';
+      currentMatchAiRead={key, question:(matchLabel?matchLabel+' · ':'')+readTitle, answer:j.answer, report:j.report||null, expertScores:Array.isArray(j.expertScores)?j.expertScores:[], at:j.at||Date.now(), phase:ph, cached:!!j.cached, lineupHash:j.lineupHash||''};
       if(currentMatchAiContext && matchAiCacheKey(currentMatchAiContext)===key) renderExpert();   // 球评比分回来了 → 刷新对阵页 AI 球评段
       if(opts.openWhenReady && typeof window.showDoubaoCached==='function') window.showDoubaoCached(currentMatchAiRead,key);
       return currentMatchAiRead;
     }
+    if(opts.openWhenReady && j && j.message) alert(j.message);
     return null;
   }catch(e){ return null; }
   finally{
@@ -1802,11 +1845,10 @@ async function ensureSystemMatchRead(ctx, opts){
 }
 function requestMatchAiRead(){
   const ctx=currentMatchAiContext;
-  if(!ctx){ alert('请先打开一场真实对阵，等页面生成模型预测后再解读。'); return; }
-  if(!USE_SERVER){ alert('系统赛前解读需要在线服务器模式，部署到 Render 后可用。'); return; }
+  if(!ctx){ alert('请先打开一场真实对阵，等页面生成预测后再查看AI分析。'); return; }
+  if(!USE_SERVER){ alert('AI独立分析需要在线服务器模式，部署到 Render 后可用。'); return; }
   const win=matchAiWindowState(ctx);
-  if(win==='early'){ alert('系统会在赛前24小时内生成这场比赛的AI解读。'); return; }
-  if(win==='closed'){ alert('本场已不在赛前解读生成窗口。'); return; }
+  if(win==='early'){ alert('系统会在赛前24小时内生成AI初判，并在官方阵容齐全后升级为最终阵容分析。'); return; }
   const key=matchAiCacheKey(ctx);
   if(currentMatchAiRead && currentMatchAiRead.key===key && currentMatchAiRead.answer){
     if(typeof window.showDoubaoCached==='function') window.showDoubaoCached(currentMatchAiRead,key);
@@ -2159,7 +2201,7 @@ async function ageMapFor(teamId){
   try{
     const r=await api(`/players/squads?team=${teamId}`);
     const m={}, list=(r&&r[0]&&r[0].players)||[];
-    list.forEach(p=>{ m[p.id]={age:p.age, pos:p.position}; });
+    list.forEach(p=>{ m[p.id]={age:p.age, pos:p.position, height:p.height||''}; });
     return m;
   }catch(e){ return {}; }
 }
@@ -2173,13 +2215,13 @@ async function fetchLineupFull(fixtureId, teamId, injMap, ageMap){   // 官方�
   try{
     const ln=await api(`/fixtures/lineups?fixture=${fixtureId}`);
     const side=(ln||[]).find(x=>x.team.id===teamId);
-    if(!side) return {start:[],subs:[]};
+    if(!side) return {start:[],subs:[],formation:'',coach:''};
     const map=e=>{
       const pl=e.player, pos=POS_GRID[String(pl.pos||'M')[0]]||'MF', info=ageMap[pl.id]||{};
-      return {id:pl.id, pos, role:pl.name, no:pl.number||0, age:info.age||null, g:0,a:0,rt:7.0, wt:posWeight(pos), st:injMap[pl.name]||'fit'};
+      return {id:pl.id, pos, role:pl.name, no:pl.number||0, age:info.age||null, height:info.height||'', g:0,a:0,rt:7.0, wt:posWeight(pos), st:injMap[pl.name]||'fit'};
     };
-    return { start:(side.startXI||[]).slice(0,11).map(map), subs:(side.substitutes||[]).map(map) };
-  }catch(e){ return {start:[],subs:[]}; }
+    return { start:(side.startXI||[]).slice(0,11).map(map), subs:(side.substitutes||[]).map(map), formation:side.formation||'', coach:(side.coach&&side.coach.name)||'' };
+  }catch(e){ return {start:[],subs:[],formation:'',coach:''}; }
 }
 /* ===== 阵容影响预测 + 首发齐自动锁定（落持久磁盘）===== */
 let lineupPen={};                 // {6/7:{ap,dp}} 关键人物缺席折减
@@ -2187,6 +2229,7 @@ let mhFrozen=null;                // 当前对阵若已锁定 → 固化快照
 let mhCurFixture=0;               // 当前对阵 fixtureId
 let mhKickoffMs=0;                // 当前对阵开赛时刻(ms)：给自动锁定加"距开赛<1h"时间闸用
 let _mhPoll=null;                 // 对阵页轮询计时器
+let mhLineupSig='';               // 官方阵容指纹；仅实质变更才刷新AI最终版
 const _keyCache={}, _lockState={};   // _lockState: fixtureId → 'prelim' | 'final'
 const POS1=p=>String(p||'M').trim().charAt(0).toUpperCase();   // G/D/M/F
 const LOCK_WIN_MS=60*60*1000;        // 距开赛 <1h：尝试"含首发"的 final 锁
@@ -2196,12 +2239,16 @@ async function teamKeyPlayers(teamId){
   let list=[];
   try{
     for(let pg=1; pg<=3; pg++){
-      const r=await api(`/players?team=${teamId}&season=${CONFIG.SEASON}&page=${pg}`);
+      const r=await api(`/players?team=${teamId}&league=${CONFIG.LEAGUE_ID}&season=${CONFIG.SEASON}&page=${pg}`);
       if(!r||!r.length) break;
       r.forEach(x=>{ const st=(x.statistics&&x.statistics[0])||{}, g=st.games||{};
         list.push({id:x.player.id, name:x.player.name, pos:POS1(g.position),
-          apps:g.appearences||0, starts:g.lineups||0, rating:parseFloat(g.rating)||0,
-          goals:(st.goals&&st.goals.total)||0}); });
+          age:x.player.age||null, height:x.player.height||'', apps:g.appearences||0, starts:g.lineups||0, rating:parseFloat(g.rating)||0,
+          goals:(st.goals&&st.goals.total)||0, assists:(st.goals&&st.goals.assists)||0,
+          shotsOn:(st.shots&&st.shots.on)||0, keyPasses:(st.passes&&st.passes.key)||0, passAccuracy:parseFloat(st.passes&&st.passes.accuracy)||0,
+          yellow:(st.cards&&st.cards.yellow)||0, red:((st.cards&&st.cards.red)||0)+((st.cards&&st.cards.yellowred)||0),
+          tackles:(st.tackles&&st.tackles.total)||0, interceptions:(st.tackles&&st.tackles.interceptions)||0,
+          saves:(st.goals&&st.goals.saves)||0}); });
       if(r.length<20) break;
     }
   }catch(e){}
@@ -2212,6 +2259,13 @@ async function teamKeyPlayers(teamId){
   const gk=list.filter(p=>p.pos==='G').sort((a,b)=> b.starts-a.starts || b.apps-a.apps)[0];
   const out={players:list, conf, firstGkId: gk?gk.id:null};
   _keyCache[teamId]=out; return out;
+}
+function enrichLineupPlayers(list,kp){
+  const byId=new Map(((kp&&kp.players)||[]).map(p=>[p.id,p]));
+  (list||[]).forEach(p=>{ const x=byId.get(p.id); if(!x) return;
+    ['age','height','apps','starts','rating','goals','assists','shotsOn','keyPasses','passAccuracy','yellow','red','tackles','interceptions','saves'].forEach(k=>{ if(x[k]!=null&&x[k]!=='') p[k]=x[k]; });
+    p.wt=posWeight(p.pos)*(0.72+0.28*(x.imp||0));
+  });
 }
 function computeLineupPenalty(kp, xiIds){
   if(!kp||!kp.players.length) return {ap:0,dp:0};
@@ -2233,7 +2287,10 @@ async function applyLineupPenalties(iH, iA, hId, aId, startH, startA){
     const [kpH,kpA]=await Promise.all([teamKeyPlayers(hId), teamKeyPlayers(aId)]);
     lineupPen[iH]=computeLineupPenalty(kpH, (startH||[]).map(p=>p.id));
     lineupPen[iA]=computeLineupPenalty(kpA, (startA||[]).map(p=>p.id));
-  }catch(e){ lineupPen[iH]={ap:0,dp:0}; lineupPen[iA]={ap:0,dp:0}; }
+    enrichLineupPlayers(squads[iH],kpH); enrichLineupPlayers(squadSubs[iH],kpH);
+    enrichLineupPlayers(squads[iA],kpA); enrichLineupPlayers(squadSubs[iA],kpA);
+    return {kpH,kpA};
+  }catch(e){ lineupPen[iH]={ap:0,dp:0}; lineupPen[iA]={ap:0,dp:0}; return null; }
 }
 // 独立预测（模型+阵容，不含市场概率，不依赖全局槽位）→ 供后台锁定用
 function predictSnapshot(bH,bA,lpH,lpA,matchStage){
@@ -2301,6 +2358,15 @@ async function lockPrediction(fixtureId, snap){
   }catch(e){}
 }
 function stopMatchupPoll(){ if(_mhPoll){ clearInterval(_mhPoll); _mhPoll=null; } }
+function lineupPayloadSig(a,b){
+  const side=x=>({formation:(x&&x.formation)||'', starters:((x&&x.start)||[]).map(p=>p.id||p.role), substitutes:((x&&x.subs)||[]).map(p=>p.id||p.role)});
+  const data=[side(a),side(b)];
+  return (data[0].starters.length||data[1].starters.length)?localHash(JSON.stringify(data)):'';
+}
+function lineupApiSig(rows,hId,aId){
+  const pick=id=>{ const x=(rows||[]).find(r=>r.team&&r.team.id===id); return x?{formation:x.formation||'',start:(x.startXI||[]).map(e=>({id:e.player&&e.player.id})),subs:(x.substitutes||[]).map(e=>({id:e.player&&e.player.id}))}:null; };
+  return lineupPayloadSig(pick(hId),pick(aId));
+}
 
 async function refreshMatchup(fixtureId, H, A, stage){
   const [bH,bA,iH,iA,ageH,ageA,outH,outA]=await Promise.all([
@@ -2308,14 +2374,15 @@ async function refreshMatchup(fixtureId, H, A, stage){
     ageMapFor(H.id),ageMapFor(A.id),injuryList(H.id),injuryList(A.id)]);
   marketProbs = await fetchMarketProbs(fixtureId);   // 市场概率（有则用、无则 null）
   const [lH,lA]=await Promise.all([fetchLineupFull(fixtureId,H.id,iH,ageH),fetchLineupFull(fixtureId,A.id,iA,ageA)]);
-  teams[6]={fl:'⚽',logo:H.logo,nm:H.name,elo:0,form:[],ch:0,mlog:[],base:bH,apiId:H.id};
-  teams[7]={fl:'⚽',logo:A.logo,nm:A.name,elo:0,form:[],ch:0,mlog:[],base:bA,apiId:A.id};
+  teams[6]={fl:'⚽',logo:H.logo,nm:H.name,elo:0,form:[],ch:0,mlog:[],base:bH,apiId:H.id,formation:lH.formation||'',coach:lH.coach||''};
+  teams[7]={fl:'⚽',logo:A.logo,nm:A.name,elo:0,form:[],ch:0,mlog:[],base:bA,apiId:A.id,formation:lA.formation||'',coach:lA.coach||''};
   squads[6]=lH.start; squads[7]=lA.start;
   squadSubs[6]=lH.subs; squadSubs[7]=lA.subs;
   squadOut[6]=outH;     squadOut[7]=outA;
   mhLineupReady = !!(lH.start && lH.start.length && lA.start && lA.start.length && lH.subs && lH.subs.length && lA.subs && lA.subs.length);   // 首发+替补 双方都齐 才算就绪
   if(mhLineupReady){ await applyLineupPenalties(6,7,H.id,A.id,lH.start,lA.start); }  // 阵容影响数值
   else { lineupPen[6]={ap:0,dp:0}; lineupPen[7]={ap:0,dp:0}; }
+  mhLineupSig=lineupPayloadSig(lH,lA);
   openMatchup(6,7,stage);
 }
 async function openMatchupLive(fixtureId){
@@ -2330,15 +2397,15 @@ async function openMatchupLive(fixtureId){
     if(locked) mhFrozen=locked;                       // 已锁定 → 进对阵页只显示固化值
     await refreshMatchup(fixtureId, H, A, stage);
     stopMatchupPoll();
-    if(!locked){
-      const st=fx.fixture.status.short, left=new Date(fx.fixture.date).getTime()-Date.now();
-      if(st==='NS' && left>0 && left<=LOCK_WIN_MS && !mhLineupReady){   // <1h 且首发未齐 → 15秒轮询
-        _mhPoll=setInterval(async ()=>{
-          if(!document.getElementById('v-matchup').classList.contains('on') || mhCurFixture!==fixtureId){ stopMatchupPoll(); return; }
-          await refreshMatchup(fixtureId, H, A, stage);
-          if(mhLineupReady || mhFrozen) stopMatchupPoll();   // 首发齐(已在渲染中锁定)即停
-        }, 15000);
-      }
+    const st=fx.fixture.status.short, left=new Date(fx.fixture.date).getTime()-Date.now();
+    if(st==='NS' && left>0 && left<=LOCK_WIN_MS){            // 开赛前持续核对阵容；内容不变则不重算
+      _mhPoll=setInterval(async ()=>{
+        if(!document.getElementById('v-matchup').classList.contains('on') || mhCurFixture!==fixtureId || Date.now()>=mhKickoffMs){ stopMatchupPoll(); return; }
+        try{
+          const rows=await api(`/fixtures/lineups?fixture=${fixtureId}`), sig=lineupApiSig(rows,H.id,A.id);
+          if(sig && sig!==mhLineupSig) await refreshMatchup(fixtureId,H,A,stage);
+        }catch(_){ }
+      },60000);
     }
   }catch(e){ console.warn('实时对阵获取失败：',e); }
 }
@@ -3258,8 +3325,22 @@ if(LIVE && USE_SERVER){ setTimeout(lockSweep, 4000); setInterval(lockSweep, 3000
     if(readKey && bodyEl.dataset.matchReadKey===readKey) return;
     bodyEl.dataset.matchReadKey=readKey;
     bodyEl.innerHTML='';
-    addMsg(item.question||'系统赛前解读','me');
-    addMsg(item.answer,'bot');
+    const r=item.report;
+    if(r&&r.probabilities&&Array.isArray(r.scores)){
+      const p=r.probabilities||{}, when=item.at?new Date(item.at).toLocaleString('zh-CN',{hour12:false}):'';
+      const scores=r.scores.slice(0,3).map(s=>`<div class="ai-rscore"><b>${escHtml(s.s)}</b><em>${Number(s.probability||0).toFixed(1)}%</em><span>${escHtml(s.why||'')}</span></div>`).join('');
+      const analyses=(r.analysis||[]).map(x=>`<div class="ai-analysis-item"><b>${escHtml(x.title)}</b><p>${escHtml(x.text)}</p></div>`).join('');
+      const risks=(r.risks||[]).length?`<div class="ai-risk"><b>风险与反向剧本</b><br>${(r.risks||[]).map(escHtml).join('；')}</div>`:'';
+      const box=document.createElement('div'); box.className='ai-report';
+      box.innerHTML=`<div class="ai-report-head"><b>${escHtml(item.question||'AI独立赛前预测')}</b><span>${escHtml(r.summary||r.scenarioLabel||'')}</span></div>
+        <div class="ai-prob-grid"><div class="ai-prob"><b>${Number(p.highScore||0).toFixed(1)}%</b><span>总进球≥4</span></div><div class="ai-prob"><b>${Number(p.oneSided||0).toFixed(1)}%</b><span>单边净胜≥3</span></div><div class="ai-prob"><b>${Number(p.shootout||0).toFixed(1)}%</b><span>双方对攻大球</span></div></div>
+        <div class="ai-report-scores">${scores}</div><div class="ai-analysis">${analyses}</div>${risks}
+        <div class="ai-report-meta">${escHtml(r.scenarioLabel||'独立判断')} · AI修正后预期总进球 ${Number(r.expectedGoals&&r.expectedGoals.total||0).toFixed(2)} · 置信度 ${Number(r.confidence||0)}%<br>${escHtml(r.definition||'')} · ${escHtml(when)}<br>该结论独立于本站统计模型，阵容不变时所有用户看到同一版本。</div>`;
+      bodyEl.appendChild(box); bodyEl.scrollTop=0;
+    }else{
+      addMsg(item.question||'系统赛前解读','me');
+      addMsg(item.answer,'bot');
+    }
     shownCachedKeys[key]=true;
   }
   window.openDoubao=open;

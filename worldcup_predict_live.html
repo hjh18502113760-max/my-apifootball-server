@@ -1136,7 +1136,7 @@ const autoBase = (typeof location!=='undefined' && /^https?:$/.test(location.pro
 const SERVER_BASE = (CONFIG.SERVER_BASE && CONFIG.SERVER_BASE.length) ? CONFIG.SERVER_BASE : (CONFIG.API_KEY.length ? '' : autoBase);
 const USE_SERVER = CONFIG.USE_LIVE && SERVER_BASE.length > 0 && CONFIG.API_KEY.length === 0;   // 走共享代理(含自动同源)
 const LIVE = CONFIG.USE_LIVE && (USE_SERVER || CONFIG.API_KEY.length > 0);                      // 实时(代理或直连)
-const BUILD='2026-06-r40-intel-fix';
+const BUILD='2026-06-r41-grouprank-fix';
 try{ console.log('[胜率预测] BUILD='+BUILD+' | USE_LIVE='+CONFIG.USE_LIVE+' | origin='+(typeof location!=='undefined'?location.origin:'-')+' | SERVER_BASE='+SERVER_BASE+' | USE_SERVER='+USE_SERVER+' | LIVE='+LIVE); }catch(_){}
 let liveScoreList = null;           // 实时模型算出的比分榜，供 topScores 使用
 
@@ -1882,12 +1882,26 @@ let _intelFb={};                                            // 本次对阵 {i:h
 function hwFor(i){ return (_intelFb&&_intelFb[i]) || {age:null,ht:null,n:0,basis:null}; }
 // 小组内排名（API 的 rank 字段可能是全局名次，4 队小组却出现"第11"→ 自算组内位次）
 function groupRankOf(st){
-  if(!st||!stCache||!stCache.groups) return (st&&st.rank)||null;
-  let grp=null; stCache.groups.forEach(g=>{ if(g.some(t=>t.id===st.id)) grp=g; });
-  if(!grp) return st.rank||null;
+  if(!st||!stCache||!stCache.groups) return null;
+  const nk=_norm(st.name||'');
+  const same=t=> (st.id!=null && t.id===st.id) || (nk && _norm(t.name)===nk);
+  // 1) 优先按 group 小组标签聚合同组球队（对"总表+小组表"或重复表都稳）
+  let peers=[];
+  if(st.group){ stCache.groups.forEach(g=>g.forEach(t=>{ if((t.group||'')===st.group) peers.push(t); })); }
+  // 2) 标签缺失/聚不出组 → 取"包含该队的最小子数组"(真正小组，排除总表)
+  if(peers.length<2){
+    let best=null; stCache.groups.forEach(g=>{ if(g.some(same)){ if(!best || g.length<best.length) best=g; } });
+    peers = best || [];
+  }
+  if(!peers.length) return null;
+  // 去重(按 id 优先，否则归一化队名)
+  const seen={}, uniq=[];
+  peers.forEach(t=>{ const k=(t.id!=null)?('i'+t.id):('n'+_norm(t.name)); if(!seen[k]){ seen[k]=1; uniq.push(t); } });
+  if(uniq.length>8) return null;                       // 明显没正确分组 → 宁可显示"—"，绝不拿全局名次冒充
+  const me=uniq.find(same)||st;
   let better=0;
-  grp.forEach(t=>{ if(t.id===st.id) return;
-    if(t.pts>st.pts || (t.pts===st.pts&&t.gd>st.gd) || (t.pts===st.pts&&t.gd===st.gd&&t.gf>st.gf)) better++; });
+  uniq.forEach(t=>{ if(same(t)) return;
+    if(t.pts>me.pts || (t.pts===me.pts&&t.gd>me.gd) || (t.pts===me.pts&&t.gd===me.gd&&t.gf>me.gf)) better++; });
   return better+1;
 }
 function teamStanding(apiId,name){
@@ -1914,7 +1928,9 @@ function qualVerdict(st,q,isKO){                              // 单队出线情
   const remain=Math.max(0,3-(st.p||0));
   if(remain===0){
     if(q!=null) return q>=50?{cls:'v-go',txt:'已出线',must:false}:{cls:'v-out',txt:'已出局',must:false};
-    return ((groupRankOf(st)||st.rank)<=2)?{cls:'v-go',txt:'小组前二 · 已出线',must:false}:{cls:'v-out',txt:'已出局',must:false};
+    const gr=groupRankOf(st);
+    if(gr==null) return {cls:'v-out',txt:'小组赛结束 · 出线待定',must:false};
+    return (gr<=2)?{cls:'v-go',txt:'小组前二 · 已出线',must:false}:{cls:'v-out',txt:'已出局',must:false};
   }
   if(q!=null && q>=99) return {cls:'v-safe',txt:'基本已出线 · 末轮可轮换',must:false};
   if(q!=null && q<=1)  return {cls:'v-out',txt:'出线基本无望',must:false};
@@ -1985,7 +2001,7 @@ function renderIntel(D){
     + '<div class="intel-2col" style="margin-top:8px"><div class="intel-side"><div class="st">'+escHtml(A.nm)+' 主要射手</div><div class="sl">'+scL(A)+'</div></div>'
     + '<div class="intel-side"><div class="st">'+escHtml(B.nm)+' 主要射手</div><div class="sl">'+scL(B)+'</div></div></div></div>';
   // D 出线情境
-  const sit=t=>t.st?('积分 '+t.st.pts+' · 第'+(groupRankOf(t.st)||t.st.rank)+(D.isKO?'':' · 已赛'+t.st.p+'场')):'—';
+  const sit=t=>{ if(!t.st) return '—'; const gr=groupRankOf(t.st); return '积分 '+t.st.pts+(gr?(' · 第'+gr):'')+(D.isKO?'':' · 已赛'+t.st.p+'场'); };
   h+='<div class="intel-card"><div class="intel-h">出线情境（影响求稳 / 求胜）</div>'
     + '<div class="intel-2col"><div class="intel-side"><div class="st">'+escHtml(A.nm)+'</div><div class="sl">'+sit(A)+'</div><div class="verdict '+A.verdict.cls+'">'+A.verdict.txt+'</div></div>'
     + '<div class="intel-side"><div class="st">'+escHtml(B.nm)+'</div><div class="sl">'+sit(B)+'</div><div class="verdict '+B.verdict.cls+'">'+B.verdict.txt+'</div></div></div></div>';

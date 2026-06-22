@@ -1136,7 +1136,7 @@ const autoBase = (typeof location!=='undefined' && /^https?:$/.test(location.pro
 const SERVER_BASE = (CONFIG.SERVER_BASE && CONFIG.SERVER_BASE.length) ? CONFIG.SERVER_BASE : (CONFIG.API_KEY.length ? '' : autoBase);
 const USE_SERVER = CONFIG.USE_LIVE && SERVER_BASE.length > 0 && CONFIG.API_KEY.length === 0;   // 走共享代理(含自动同源)
 const LIVE = CONFIG.USE_LIVE && (USE_SERVER || CONFIG.API_KEY.length > 0);                      // 实时(代理或直连)
-const BUILD='2026-06-r38-intel-panel';
+const BUILD='2026-06-r39-intel-lastsquad';
 try{ console.log('[胜率预测] BUILD='+BUILD+' | USE_LIVE='+CONFIG.USE_LIVE+' | origin='+(typeof location!=='undefined'?location.origin:'-')+' | SERVER_BASE='+SERVER_BASE+' | USE_SERVER='+USE_SERVER+' | LIVE='+LIVE); }catch(_){}
 let liveScoreList = null;           // 实时模型算出的比分榜，供 topScores 使用
 
@@ -1831,6 +1831,46 @@ function avgHW(i){
           ht:hts.length?hts.reduce((a,b)=>a+b,0)/hts.length:null,
           n:(squads[i]||[]).length+(squadSubs[i]||[]).length};
 }
+// 回退：当前场官方名单未公布时，用「上一场已结束比赛的首发+替补」算 年龄/身高/人数；再不行用全队名单兜底
+const _lastHW={};
+async function lastSquadHW(teamId){
+  if(_lastHW[teamId]) return _lastHW[teamId];
+  let res={age:null,ht:null,n:0,basis:null};
+  try{
+    const ageMap=await ageMapFor(teamId);                       // 全队 {id:{age,height}}
+    let ids=null;
+    try{
+      const fxs=await api(`/fixtures?team=${teamId}&last=6&league=${CONFIG.LEAGUE_ID}&season=${CONFIG.SEASON}`);
+      const DONE=['FT','AET','PEN'];
+      const done=(fxs||[]).filter(f=>DONE.includes(f.fixture.status.short))
+                          .sort((a,b)=>new Date(b.fixture.date)-new Date(a.fixture.date));
+      for(const f of done){                                     // 从最近一场往前找到有名单的一场
+        const ln=await api(`/fixtures/lineups?fixture=${f.fixture.id}`).catch(()=>null);
+        const side=(ln||[]).find(x=>x.team&&x.team.id===teamId);
+        if(side && (side.startXI||[]).length){
+          ids=(side.startXI||[]).map(e=>e.player.id).concat((side.substitutes||[]).map(e=>e.player.id));
+          break;
+        }
+      }
+    }catch(_){}
+    let pool, basis;
+    if(ids && ids.length){ pool=ids.map(id=>ageMap[id]).filter(Boolean); basis='last'; }   // 上一场名单
+    else { pool=Object.values(ageMap); basis='squad'; }                                     // 兜底：全队名单
+    const ages=pool.map(p=>+p.age).filter(a=>a>=14&&a<=50);
+    const hts =pool.map(p=>_numH(p.height)).filter(h=>h>=150&&h<=220);
+    res={ age:ages.length?ages.reduce((a,b)=>a+b,0)/ages.length:null,
+          ht: hts.length?hts.reduce((a,b)=>a+b,0)/hts.length:null,
+          n: (ids&&ids.length)?ids.length:pool.length,
+          basis:(ages.length||hts.length)?basis:null };
+  }catch(e){ res={age:null,ht:null,n:0,basis:null}; }
+  _lastHW[teamId]=res; return res;
+}
+let _intelFb={};                       // 本次对阵的回退均值 {i:hw}
+function hwFor(i){
+  if((squads[i]||[]).length){ const w=avgHW(i); w.basis='current'; return w; }   // 当前名单优先
+  if(_intelFb && _intelFb[i]) return _intelFb[i];                                // 上一场/全队回退
+  return {age:null,ht:null,n:0,basis:null};
+}
 function teamStanding(apiId,name){
   if(!stCache||!stCache.groups) return null; let hit=null, nk='n:'+_norm(name||'');
   stCache.groups.forEach(g=>g.forEach(t=>{ if(t.id===apiId) hit=t; }));
@@ -1877,7 +1917,7 @@ function buildIntel(iH,iA,pr,stage){
   const isKO=/^(r32|r16|qf|sf|final|3rd)/.test(stage||'');
   const mk=i=>{ const t=teams[i]||{}, apiId=t.apiId, nm=t.nm||'', st=teamStanding(apiId,nm);
     return { i, nm, apiId, st, q:(qualProb&&apiId!=null)?qualProb[apiId]:null,
-      fifa:fifaPts(nm), frank:fifaRankOf(nm), hw:avgHW(i), scorers:teamScorers(apiId,nm),
+      fifa:fifaPts(nm), frank:fifaRankOf(nm), hw:hwFor(i), scorers:teamScorers(apiId,nm),
       out:(squadOut[i]||[]), bench:(squadSubs[i]||[]) }; };
   const A=mk(iH), B=mk(iA);
   A.verdict=qualVerdict(A.st,A.q,isKO); B.verdict=qualVerdict(B.st,B.q,isKO);
@@ -1900,7 +1940,9 @@ function renderIntel(D){
     + cmpRow('平均年龄', A.hw.age?A.hw.age.toFixed(1)+'岁':'—', B.hw.age?B.hw.age.toFixed(1)+'岁':'—', null)
     + cmpRow('平均身高', A.hw.ht?Math.round(A.hw.ht)+'cm':'—', B.hw.ht?Math.round(B.hw.ht)+'cm':'—', 'hi')
     + cmpRow('阵容人数', A.hw.n||'—', B.hw.n||'—', null)
-    + '<div class="intel-line" style="color:var(--faint)">实力位次按 FIFA 实力分排序（非官方排名，仅供参考）；身价类数据暂无可靠来源，未列入。</div></div>';
+    + '<div class="intel-line" style="color:var(--faint)">'
+    + ((A.hw.basis==='last'||B.hw.basis==='last')?'平均年龄/身高/人数暂用<b>上一场名单</b>，本场官方阵容公布后自动更新；':(A.hw.basis==='squad'||B.hw.basis==='squad')?'平均年龄/身高/人数暂用<b>球队名单</b>，本场官方阵容公布后自动更新；':'')
+    + '实力位次按 FIFA 实力分排序（非官方排名，仅供参考）；身价类数据暂无可靠来源，未列入。</div></div>';
   // B 本届战绩
   const rec=t=>t.st?(t.st.w+'-'+t.st.d+'-'+t.st.l):'—';
   h+='<div class="intel-card"><div class="intel-h">本届战绩 · 截止已结束比赛</div>'+names
@@ -1949,6 +1991,13 @@ async function loadIntel(iH,iA,pr,stage){
   el.innerHTML='<div class="intel-empty">读取本届统计中…</div>';
   await ensureIntelData();
   if(tok!==_intelTok) return;                              // 期间切换了对阵 → 放弃旧渲染
+  _intelFb={};
+  for(const i of [iH,iA]){                                 // 当前场名单未公布 → 预取上一场名单的均值
+    if(!((squads[i]||[]).length)){
+      const id=teams[i]&&teams[i].apiId;
+      if(id!=null){ const w=await lastSquadHW(id); if(tok!==_intelTok) return; _intelFb[i]=w; }
+    }
+  }
   try{ renderIntel(buildIntel(iH,iA,pr,stage)); }
   catch(e){ console.warn('intel',e); el.innerHTML='<div class="intel-empty">情报数据暂不可用</div>'; }
 }

@@ -1136,7 +1136,7 @@ const autoBase = (typeof location!=='undefined' && /^https?:$/.test(location.pro
 const SERVER_BASE = (CONFIG.SERVER_BASE && CONFIG.SERVER_BASE.length) ? CONFIG.SERVER_BASE : (CONFIG.API_KEY.length ? '' : autoBase);
 const USE_SERVER = CONFIG.USE_LIVE && SERVER_BASE.length > 0 && CONFIG.API_KEY.length === 0;   // 走共享代理(含自动同源)
 const LIVE = CONFIG.USE_LIVE && (USE_SERVER || CONFIG.API_KEY.length > 0);                      // 实时(代理或直连)
-const BUILD='2026-06-r42-grouprank-dbg';
+const BUILD='2026-06-r43-grouprank-aggfix';
 try{ console.log('[胜率预测] BUILD='+BUILD+' | USE_LIVE='+CONFIG.USE_LIVE+' | origin='+(typeof location!=='undefined'?location.origin:'-')+' | SERVER_BASE='+SERVER_BASE+' | USE_SERVER='+USE_SERVER+' | LIVE='+LIVE); }catch(_){}
 let liveScoreList = null;           // 实时模型算出的比分榜，供 topScores 使用
 
@@ -1888,12 +1888,12 @@ function groupRankOf(st){
   // 1) 优先按 group 小组标签聚合同组球队（对"总表+小组表"或重复表都稳）
   let peers=[];
   if(st.group){ stCache.groups.forEach(g=>g.forEach(t=>{ if((t.group||'')===st.group) peers.push(t); })); }
-  // 2) 标签缺失/聚不出组 → 取"包含该队的最小子数组"(真正小组，排除总表)
-  if(peers.length<2){
-    let best=null; stCache.groups.forEach(g=>{ if(g.some(same)){ if(!best || g.length<best.length) best=g; } });
-    peers = best || [];
+  // 标签聚出的组不合理(太少，或像"Group Stage"汇总表那样太多>8) → 改用"含该队的最小子表"(真正4队小组)
+  if(peers.length<2 || peers.length>8){
+    let best=null; stCache.groups.forEach(g=>{ if(g.some(same)){ if(!best||g.length<best.length) best=g; } });
+    peers = (best && best.length<=8) ? best : [];
   }
-  if(!peers.length) return null;
+  if(peers.length<2) return null;
   // 去重(按 id 优先，否则归一化队名)
   const seen={}, uniq=[];
   peers.forEach(t=>{ const k=(t.id!=null)?('i'+t.id):('n'+_norm(t.name)); if(!seen[k]){ seen[k]=1; uniq.push(t); } });
@@ -1905,10 +1905,12 @@ function groupRankOf(st){
   return better+1;
 }
 function teamStanding(apiId,name){
-  if(!stCache||!stCache.groups) return null; let hit=null, nk='n:'+_norm(name||'');
-  stCache.groups.forEach(g=>g.forEach(t=>{ if(t.id===apiId) hit=t; }));
-  if(!hit) stCache.groups.forEach(g=>g.forEach(t=>{ if('n:'+_norm(t.name)===nk) hit=t; }));
-  return hit;
+  if(!stCache||!stCache.groups) return null;
+  const nk=_norm(name||''); let best=null, bestLen=1e9;
+  const consider=(t,len)=>{ if(len<bestLen){ best=t; bestLen=len; } };   // 取"最小子表"那行=真正4队小组，避开12队汇总表
+  stCache.groups.forEach(g=>g.forEach(t=>{ if(apiId!=null&&t.id===apiId) consider(t,g.length); }));
+  if(!best) stCache.groups.forEach(g=>g.forEach(t=>{ if(nk&&_norm(t.name)===nk) consider(t,g.length); }));
+  return best;
 }
 function teamScorers(apiId,name){
   const out=[], nk=_norm(name||'');

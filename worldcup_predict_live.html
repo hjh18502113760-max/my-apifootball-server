@@ -123,6 +123,21 @@ body{
 .leg i{width:14px; height:3px; border-radius:2px; display:inline-block}
 canvas{width:100%; height:128px; display:block}
 .foot-note{font-size:11px; color:var(--faint); text-align:center; margin-top:16px; letter-spacing:.03em}
+/* ===== 开赛天气 ===== */
+#mhWx{margin:2px 0 14px}
+.wx-card{display:flex;align-items:center;gap:13px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+.wx-card.wx-alert{border-color:rgba(255,178,62,.5);background:linear-gradient(180deg,rgba(255,178,62,.08),var(--surface))}
+.wx-load,.wx-empty{justify-content:center;color:var(--faint);font-size:12px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px;text-align:center}
+.wx-ic{width:40px;height:40px;flex:0 0 40px;display:flex;align-items:center;justify-content:center}
+.wx-ic svg{width:38px;height:38px}
+.wx-main{flex:1;min-width:0}
+.wx-top{font-size:15px;color:var(--txt);display:flex;align-items:baseline;gap:8px}
+.wx-top b{font-weight:700}
+.wx-tp{font-family:var(--num);font-weight:700;font-size:19px;color:var(--txt)}
+.wx-sub{font-size:11.5px;color:var(--muted);margin-top:2px}
+.wx-warn{color:#FFB23E;font-weight:700}
+.wx-stats{font-size:11.5px;color:var(--muted);margin-top:4px;font-family:var(--num)}
+.wx-note{font-size:10.5px;color:var(--faint);text-align:center;margin-top:6px}
 /* ===== 数据情报对比 ===== */
 #mhIntel{margin-top:6px}
 .intel-empty{font-size:12px;color:var(--faint);text-align:center;padding:18px 8px;background:var(--surface);border:1px solid var(--line);border-radius:14px}
@@ -692,6 +707,8 @@ canvas{width:100%; height:128px; display:block}
             <div class="kobreak" id="mhKoBreak"></div>
           </div>
 
+          <div id="mhWx" style="display:none"></div>
+
           <div class="section-t">可用性影响</div>
           <div id="mhImpact"></div>
 
@@ -806,6 +823,7 @@ function hideAllViews(){document.querySelectorAll('.view').forEach(v=>v.classLis
 function show(v){
   hideAllViews();
   if(typeof stopMatchupPoll==='function') stopMatchupPoll();   // 离开对阵页 → 停轮询
+  if(typeof stopWxTimer==='function') stopWxTimer();           // 离开对阵页 → 停天气刷新
   if(typeof stStopPoll==='function' && v!=='standings') stStopPoll();   // 离开积分页 → 停轮询
   if(typeof tdStopPoll==='function' && v!=='teams') tdStopPoll();       // 离开球队页 → 停轮询
   tabs.forEach(t=>t.classList.toggle('on',t.dataset.v===v));
@@ -1136,7 +1154,7 @@ const autoBase = (typeof location!=='undefined' && /^https?:$/.test(location.pro
 const SERVER_BASE = (CONFIG.SERVER_BASE && CONFIG.SERVER_BASE.length) ? CONFIG.SERVER_BASE : (CONFIG.API_KEY.length ? '' : autoBase);
 const USE_SERVER = CONFIG.USE_LIVE && SERVER_BASE.length > 0 && CONFIG.API_KEY.length === 0;   // 走共享代理(含自动同源)
 const LIVE = CONFIG.USE_LIVE && (USE_SERVER || CONFIG.API_KEY.length > 0);                      // 实时(代理或直连)
-const BUILD='2026-06-r43-grouprank-aggfix';
+const BUILD='2026-06-r44-weather';
 try{ console.log('[胜率预测] BUILD='+BUILD+' | USE_LIVE='+CONFIG.USE_LIVE+' | origin='+(typeof location!=='undefined'?location.origin:'-')+' | SERVER_BASE='+SERVER_BASE+' | USE_SERVER='+USE_SERVER+' | LIVE='+LIVE); }catch(_){}
 let liveScoreList = null;           // 实时模型算出的比分榜，供 topScores 使用
 
@@ -1807,6 +1825,105 @@ function renderExpert(){
     note.innerHTML='<div style="font-size:11.5px;line-height:1.7;color:var(--faint);margin-top:8px">赛前24小时内生成AI初判；双方官方首发和替补齐全后，自动升级为最终阵容独立预测。</div>';
   }
 }
+/* ===== 开赛天气（Open-Meteo，浏览器直连，免key） ===== */
+let mhVenueCity='', mhVenueName='', _wxTok=0, _wxTimer=null;
+const _geoCache={}, _wxCache={};
+function stopWxTimer(){ if(_wxTimer){ clearInterval(_wxTimer); _wxTimer=null; } _wxTok++; }
+function wmo(code){ const c=+code;
+  if(c===0) return {t:'晴',k:'sun'};
+  if(c===1||c===2) return {t:'多云',k:'cloud'};
+  if(c===3) return {t:'阴',k:'cloud'};
+  if(c===45||c===48) return {t:'雾',k:'fog'};
+  if(c>=51&&c<=57) return {t:'小雨',k:'rain'};
+  if(c>=61&&c<=67) return {t:'雨',k:'rain'};
+  if(c>=71&&c<=77) return {t:'雪',k:'snow'};
+  if(c>=80&&c<=82) return {t:'阵雨',k:'rain'};
+  if(c===85||c===86) return {t:'阵雪',k:'snow'};
+  if(c===95) return {t:'雷暴',k:'storm'};
+  if(c===96||c===99) return {t:'雷暴冰雹',k:'storm'};
+  return {t:'—',k:'cloud'};
+}
+function wxIcon(k){
+  const sun='<circle cx="20" cy="20" r="8" fill="#FFC861"/>'+[0,45,90,135,180,225,270,315].map(a=>{const r=a*Math.PI/180,x1=20+Math.cos(r)*12,y1=20+Math.sin(r)*12,x2=20+Math.cos(r)*16,y2=20+Math.sin(r)*16;return `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="#FFC861" stroke-width="2.4" stroke-linecap="round"/>`;}).join('');
+  const cloud='<path d="M12 27 a7 7 0 0 1 0.5 -13.9 a9 9 0 0 1 17 2 a6 6 0 0 1 -0.5 11.9 z" fill="#9FB0C8"/>';
+  const cloudD='<path d="M12 23 a7 7 0 0 1 0.5 -13.9 a9 9 0 0 1 17 2 a6 6 0 0 1 -0.5 11.9 z" fill="#9FB0C8"/>';
+  const drops=c=>[14,20,26].map(x=>`<line x1="${x}" y1="27" x2="${x-2}" y2="33" stroke="${c}" stroke-width="2.2" stroke-linecap="round"/>`).join('');
+  const map={
+    sun:sun,
+    cloud:cloud,
+    fog:'<path d="M12 19 a7 7 0 0 1 0.5 -13.9 a9 9 0 0 1 17 2 a6 6 0 0 1 -0.5 11.9 z" fill="#9FB0C8"/>'+[26,31,36].map(y=>`<line x1="8" y1="${y}" x2="32" y2="${y}" stroke="#9FB0C8" stroke-width="2.2" stroke-linecap="round"/>`).join(''),
+    rain:cloudD+drops('#4DA8FF'),
+    snow:cloudD+[14,20,26].map(x=>`<text x="${x-2.5}" y="34" font-size="9" fill="#EAEFF6">*</text>`).join(''),
+    storm:cloudD+'<polygon points="20,26 15,34 19,34 16,40 25,31 20,31 23,26" fill="#FFB23E"/>'
+  };
+  return '<svg viewBox="0 0 40 42" xmlns="http://www.w3.org/2000/svg">'+(map[k]||cloud)+'</svg>';
+}
+async function geocodeCity(city){
+  const key=_norm(city); if(!key) return null;
+  if(_geoCache[key]!==undefined) return _geoCache[key];
+  let r=null;
+  try{
+    const res=await fetch('https://geocoding-api.open-meteo.com/v1/search?count=1&language=zh&name='+encodeURIComponent(city));
+    const j=await res.json();
+    if(j&&j.results&&j.results[0]) r={lat:j.results[0].latitude, lon:j.results[0].longitude};
+  }catch(e){}
+  _geoCache[key]=r; return r;
+}
+async function fetchForecast(lat,lon,kickoffMs,force){
+  const ck=lat.toFixed(2)+','+lon.toFixed(2);
+  const c=_wxCache[ck];
+  if(!force && c && (Date.now()-c.at<30*60*1000)) return c.data;
+  let data=null;
+  try{
+    const url='https://api.open-meteo.com/v1/forecast?timeformat=unixtime&forecast_days=3&wind_speed_unit=kmh'
+      +'&hourly=temperature_2m,relative_humidity_2m,precipitation_probability,weather_code,wind_speed_10m'
+      +'&latitude='+lat+'&longitude='+lon;
+    const res=await fetch(url); const j=await res.json();
+    const H=j&&j.hourly;
+    if(H&&H.time&&H.time.length){
+      const ks=Math.round(kickoffMs/1000); let bi=0,bd=1e18;
+      H.time.forEach((tt,i)=>{ const d=Math.abs(tt-ks); if(d<bd){bd=d;bi=i;} });
+      data={ temp:H.temperature_2m[bi], hum:H.relative_humidity_2m[bi],
+             pop:H.precipitation_probability?H.precipitation_probability[bi]:null,
+             code:H.weather_code[bi], wind:H.wind_speed_10m?H.wind_speed_10m[bi]:null };
+    }
+  }catch(e){}
+  if(data) _wxCache[ck]={at:Date.now(), data};
+  return data;
+}
+function wxCardHTML(wx,city,name,kickoffMs){
+  const w=wmo(wx.code), stormy=(w.k==='storm');
+  const hm=new Date(kickoffMs).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',hour12:false});
+  const stats=[];
+  if(wx.pop!=null) stats.push('降水 '+Math.round(wx.pop)+'%');
+  if(wx.hum!=null) stats.push('湿度 '+Math.round(wx.hum)+'%');
+  if(wx.wind!=null) stats.push('风 '+Math.round(wx.wind)+' km/h');
+  return '<div class="wx-card'+(stormy?' wx-alert':'')+'">'
+    +'<div class="wx-ic '+w.k+'">'+wxIcon(w.k)+'</div>'
+    +'<div class="wx-main"><div class="wx-top"><b>'+w.t+'</b><span class="wx-tp">'+Math.round(wx.temp)+'°C</span></div>'
+    +'<div class="wx-sub">'+escHtml(city||name||'场馆')+' · 开赛 '+hm+(stormy?' · <span class="wx-warn">注意雷暴</span>':'')+'</div>'
+    +'<div class="wx-stats">'+(stats.join(' · ')||'')+'</div></div></div>'
+    +'<div class="wx-note">开赛时段天气预报（Open-Meteo）· 临场可能变化</div>';
+}
+async function loadWeather(city,name,kickoffMs){
+  const host=document.getElementById('mhWx'); if(!host) return;
+  stopWxTimer(); const tok=_wxTok;
+  const inWin=()=>{ if(!kickoffMs) return false; const d=kickoffMs-Date.now(); return d<=24*3600e3 && d>-3*3600e3; };
+  if(!inWin() || !(city||name)){ host.style.display='none'; host.innerHTML=''; return; }   // 不在24h窗口/无城市 → 不显示
+  host.style.display=''; host.innerHTML='<div class="wx-card wx-load">读取开赛天气…</div>';
+  const draw=async(force)=>{
+    if(tok!==_wxTok) return;
+    const geo=await geocodeCity(city||name); if(tok!==_wxTok) return;
+    if(!geo){ host.innerHTML='<div class="wx-empty">天气暂不可用（未定位到场馆城市）</div>'; return; }
+    const wx=await fetchForecast(geo.lat,geo.lon,kickoffMs,force); if(tok!==_wxTok) return;
+    host.innerHTML = wx ? wxCardHTML(wx,city,name,kickoffMs) : '<div class="wx-empty">天气暂不可用</div>';
+  };
+  await draw(false);
+  const d=kickoffMs-Date.now();
+  if(d<=3*3600e3 && d>-3*3600e3){                       // 距开赛 ≤3h：每30分钟刷新一次
+    _wxTimer=setInterval(()=>{ if(tok!==_wxTok || !inWin()){ stopWxTimer(); return; } draw(true); }, 30*60*1000);
+  }
+}
 /* ===== 数据情报对比 INTEL ===== */
 // 模型版大比分概率：由 Poisson λ 直接算，与AI报告相互独立
 function bigScoreProbs(lH,lA){
@@ -2284,6 +2401,7 @@ function openMatchup(iH,iA,stage){
   renderMarket(marketProbs);      // 市场结构佐证线（B）
   renderExpert();                 // AI 球评 3 比分（A）：有缓存即显示，否则占位
   loadIntel(iH,iA,pr,stage);      // 数据情报对比（异步：确保积分/出线数据后渲染）
+  loadWeather(mhVenueCity,mhVenueName,mhKickoffMs);   // 开赛天气（进入24h窗口才显示；≤3h每30min刷新）
   if(ready){
     document.getElementById('mhLineA').innerHTML=lineupHTML(iH);
     document.getElementById('mhLineB').innerHTML=lineupHTML(iA);
@@ -2668,6 +2786,8 @@ async function openMatchupLive(fixtureId){
     mhCurFixture=fixtureId; mhFrozen=null; lineupPen={};
     const fxs=await api(`/fixtures?id=${fixtureId}`); const fx=fxs[0];
     mhKickoffMs=new Date(fx.fixture.date).getTime()||0;     // 记下开赛时刻，供 final 锁时间闸判断
+    mhVenueCity=(fx.fixture.venue&&fx.fixture.venue.city)||'';      // 场馆城市(给天气定位)
+    mhVenueName=(fx.fixture.venue&&fx.fixture.venue.name)||'';
     const H=fx.teams.home, A=fx.teams.away;
     const stage=stageFromRound(fx.league&&fx.league.round);
     const arch=await loadPredArchive();

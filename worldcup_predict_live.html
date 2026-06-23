@@ -1136,7 +1136,7 @@ const autoBase = (typeof location!=='undefined' && /^https?:$/.test(location.pro
 const SERVER_BASE = (CONFIG.SERVER_BASE && CONFIG.SERVER_BASE.length) ? CONFIG.SERVER_BASE : (CONFIG.API_KEY.length ? '' : autoBase);
 const USE_SERVER = CONFIG.USE_LIVE && SERVER_BASE.length > 0 && CONFIG.API_KEY.length === 0;   // 走共享代理(含自动同源)
 const LIVE = CONFIG.USE_LIVE && (USE_SERVER || CONFIG.API_KEY.length > 0);                      // 实时(代理或直连)
-const BUILD='2026-06-r41-grouprank-fix';
+const BUILD='2026-06-r42-grouprank-dbg';
 try{ console.log('[胜率预测] BUILD='+BUILD+' | USE_LIVE='+CONFIG.USE_LIVE+' | origin='+(typeof location!=='undefined'?location.origin:'-')+' | SERVER_BASE='+SERVER_BASE+' | USE_SERVER='+USE_SERVER+' | LIVE='+LIVE); }catch(_){}
 let liveScoreList = null;           // 实时模型算出的比分榜，供 topScores 使用
 
@@ -2013,6 +2013,17 @@ function renderIntel(D){
     + '<div class="intel-line" style="color:var(--faint)">替补/战术深度的强弱判断见上方「AI 赛前独立分析」，此处只列客观人数与缺阵。</div></div>';
   // F 综合研判
   h+='<div class="intel-card"><div class="intel-h">综合研判</div><div class="synth"><span class="tag '+D.synth.tag+'">'+D.synth.tagTxt+'</span><br>'+D.synth.txt+'</div></div>';
+  try{
+    if(/idbg=1/.test((typeof location!=='undefined'&&location.search)||'')){
+      const dump=o=>{ const id=o.apiId, nk=_norm(o.nm), rows=[];
+        ((stCache&&stCache.groups)||[]).forEach((g,gi)=>{ g.forEach(t=>{
+          if(t.id===id||_norm(t.name)===nk) rows.push('g'+gi+'(n'+g.length+') id='+t.id+' "'+t.name+'" grp="'+(t.group||'')+'" p'+t.pts+' gd'+t.gd); }); });
+        return escHtml(o.nm)+' apiId='+id+' nm="'+nk+'" → '+(rows.length?rows.join(' || '):'无匹配行'); };
+      h+='<div class="intel-card" style="font-size:10px;line-height:1.6;color:#9fb0c8;word-break:break-all">'
+        +'【诊断】子表数='+(((stCache&&stCache.groups)||[]).length)+' 各表队数=['+(((stCache&&stCache.groups)||[]).map(g=>g.length).join(','))+']<br>'
+        +dump(D.A)+'<br>'+dump(D.B)+'<br>grA='+groupRankOf(D.A.st)+' grB='+groupRankOf(D.B.st)+'</div>';
+    }
+  }catch(_){}
   el.innerHTML=h;
 }
 async function ensureIntelData(){

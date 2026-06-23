@@ -137,6 +137,8 @@ canvas{width:100%; height:128px; display:block}
 .wx-sub{font-size:11.5px;color:var(--muted);margin-top:2px}
 .wx-warn{color:#FFB23E;font-weight:700}
 .wx-stats{font-size:11.5px;color:var(--muted);margin-top:4px;font-family:var(--num)}
+.wx-live{font-size:9.5px;font-weight:800;color:#0B0E14;background:var(--a);border-radius:5px;padding:1px 6px;margin-left:4px;letter-spacing:.04em;vertical-align:middle}
+.wx-2nd{font-size:11px;color:var(--faint);margin-top:5px}
 .wx-note{font-size:10.5px;color:var(--faint);text-align:center;margin-top:6px}
 /* ===== 数据情报对比 ===== */
 #mhIntel{margin-top:6px}
@@ -1154,7 +1156,7 @@ const autoBase = (typeof location!=='undefined' && /^https?:$/.test(location.pro
 const SERVER_BASE = (CONFIG.SERVER_BASE && CONFIG.SERVER_BASE.length) ? CONFIG.SERVER_BASE : (CONFIG.API_KEY.length ? '' : autoBase);
 const USE_SERVER = CONFIG.USE_LIVE && SERVER_BASE.length > 0 && CONFIG.API_KEY.length === 0;   // 走共享代理(含自动同源)
 const LIVE = CONFIG.USE_LIVE && (USE_SERVER || CONFIG.API_KEY.length > 0);                      // 实时(代理或直连)
-const BUILD='2026-06-r44-weather';
+const BUILD='2026-06-r45-weather-live';
 try{ console.log('[胜率预测] BUILD='+BUILD+' | USE_LIVE='+CONFIG.USE_LIVE+' | origin='+(typeof location!=='undefined'?location.origin:'-')+' | SERVER_BASE='+SERVER_BASE+' | USE_SERVER='+USE_SERVER+' | LIVE='+LIVE); }catch(_){}
 let liveScoreList = null;           // 实时模型算出的比分榜，供 topScores 使用
 
@@ -1876,34 +1878,53 @@ async function fetchForecast(lat,lon,kickoffMs,force){
   let data=null;
   try{
     const url='https://api.open-meteo.com/v1/forecast?timeformat=unixtime&forecast_days=3&wind_speed_unit=kmh'
+      +'&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m,precipitation'   // 当前实况(最新一轮模型)
       +'&hourly=temperature_2m,relative_humidity_2m,precipitation_probability,weather_code,wind_speed_10m'
       +'&latitude='+lat+'&longitude='+lon;
     const res=await fetch(url); const j=await res.json();
+    let kick=null, cur=null;
     const H=j&&j.hourly;
     if(H&&H.time&&H.time.length){
       const ks=Math.round(kickoffMs/1000); let bi=0,bd=1e18;
       H.time.forEach((tt,i)=>{ const d=Math.abs(tt-ks); if(d<bd){bd=d;bi=i;} });
-      data={ temp:H.temperature_2m[bi], hum:H.relative_humidity_2m[bi],
+      kick={ temp:H.temperature_2m[bi], hum:H.relative_humidity_2m[bi],
              pop:H.precipitation_probability?H.precipitation_probability[bi]:null,
              code:H.weather_code[bi], wind:H.wind_speed_10m?H.wind_speed_10m[bi]:null };
     }
+    const C=j&&j.current;
+    if(C&&C.weather_code!=null){
+      cur={ temp:C.temperature_2m, hum:C.relative_humidity_2m, precip:C.precipitation,
+            code:C.weather_code, wind:C.wind_speed_10m, time:C.time };
+    }
+    if(kick||cur) data={kick,cur};
   }catch(e){}
   if(data) _wxCache[ck]={at:Date.now(), data};
   return data;
 }
-function wxCardHTML(wx,city,name,kickoffMs){
-  const w=wmo(wx.code), stormy=(w.k==='storm');
+function wxCardHTML(data,city,name,kickoffMs){
+  const d=kickoffMs-Date.now();
+  const useCur = !!(data.cur) && d<=3*3600e3;                 // ≤3h前 或 比赛中 → 以实况为主
+  const prim = useCur ? data.cur : (data.kick||data.cur);
+  if(!prim) return '<div class="wx-empty">天气暂不可用</div>';
+  const w=wmo(prim.code), kickW=data.kick?wmo(data.kick.code):null;
+  const stormy=(w.k==='storm')||(kickW&&kickW.k==='storm');
   const hm=new Date(kickoffMs).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',hour12:false});
   const stats=[];
-  if(wx.pop!=null) stats.push('降水 '+Math.round(wx.pop)+'%');
-  if(wx.hum!=null) stats.push('湿度 '+Math.round(wx.hum)+'%');
-  if(wx.wind!=null) stats.push('风 '+Math.round(wx.wind)+' km/h');
+  if(useCur){ if(prim.precip!=null&&prim.precip>0) stats.push('降水 '+prim.precip+' mm'); }
+  else { if(prim.pop!=null) stats.push('降水概率 '+Math.round(prim.pop)+'%'); }
+  if(prim.hum!=null) stats.push('湿度 '+Math.round(prim.hum)+'%');
+  if(prim.wind!=null) stats.push('风 '+Math.round(prim.wind)+' km/h');
+  const curT = (useCur&&prim.time)?new Date(prim.time*1000).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',hour12:false}):'';
+  const subL = useCur ? (escHtml(city||name||'场馆')+' · 实况'+(curT?(' '+curT+' 更新'):'')) : (escHtml(city||name||'场馆')+' · 开赛 '+hm);
+  let second='';
+  if(useCur && data.kick){ const kw=wmo(data.kick.code);
+    second='<div class="wx-2nd">开赛时段预报：'+kw.t+' '+Math.round(data.kick.temp)+'°C'+(data.kick.pop!=null?(' · 降水'+Math.round(data.kick.pop)+'%'):'')+'</div>'; }
   return '<div class="wx-card'+(stormy?' wx-alert':'')+'">'
     +'<div class="wx-ic '+w.k+'">'+wxIcon(w.k)+'</div>'
-    +'<div class="wx-main"><div class="wx-top"><b>'+w.t+'</b><span class="wx-tp">'+Math.round(wx.temp)+'°C</span></div>'
-    +'<div class="wx-sub">'+escHtml(city||name||'场馆')+' · 开赛 '+hm+(stormy?' · <span class="wx-warn">注意雷暴</span>':'')+'</div>'
-    +'<div class="wx-stats">'+(stats.join(' · ')||'')+'</div></div></div>'
-    +'<div class="wx-note">开赛时段天气预报（Open-Meteo）· 临场可能变化</div>';
+    +'<div class="wx-main"><div class="wx-top"><b>'+w.t+'</b><span class="wx-tp">'+Math.round(prim.temp)+'°C</span>'+(useCur?'<span class="wx-live">实况</span>':'')+'</div>'
+    +'<div class="wx-sub">'+subL+(stormy?' · <span class="wx-warn">注意雷暴</span>':'')+'</div>'
+    +'<div class="wx-stats">'+(stats.join(' · ')||'')+'</div>'+second+'</div></div>'
+    +'<div class="wx-note">'+(useCur?'当前实况 + 开赛预报':'开赛时段预报')+'（Open-Meteo · 约每小时更新）· 临场可能变化</div>';
 }
 async function loadWeather(city,name,kickoffMs){
   const host=document.getElementById('mhWx'); if(!host) return;
